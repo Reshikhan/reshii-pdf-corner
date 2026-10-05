@@ -213,7 +213,10 @@ function showFiles(ws, files){
   let list = ws.querySelector('.filelist');
   if (!list){ list = el('<div class="filelist"></div>'); ws.querySelector('#wsBody').appendChild(list); }
   list.innerHTML = '';
-  files.forEach(f => list.appendChild(el(`<span class="filechip">📎 ${f.name}</span>`)));
+  files.forEach(f => {
+    const kb = f.size ? ` <span style="opacity:.65">${(f.size/1024).toFixed(0)}KB</span>` : '';
+    list.appendChild(el(`<span class="filechip">📎 ${f.name}${kb}</span>`));
+  });
 }
 function actionRow(ws, label, onClick, ghostLabel){
   const row = el('<div class="row"></div>');
@@ -301,18 +304,20 @@ BUILDERS.pdf2img = function(ws){
   let file = null;
   makeDrop(ws, 'application/pdf (.pdf)', false, f => { file = f[0]; showFiles(ws, [file]); });
   const row = el(`<div class="row"><label class="field">Format<select id="fmt"><option value="png">PNG</option><option value="jpeg">JPG</option></select></label>
+    <label class="field">Resolution<select id="scale"><option value="1.5">Standard (1.5×)</option><option value="2" selected>High (2×)</option><option value="3">Ultra (3×)</option></select></label>
     <label class="field">Quality (JPG)<input id="q" type="range" min="0.4" max="1" step="0.05" value="0.85"></label></div>`);
   ws.querySelector('#wsBody').appendChild(row);
   actionRow(ws, 'Convert to Images', async () => {
     if (!file) return setStatus(ws, 'Please choose a PDF file.', 'err');
     const fmt = ws.querySelector('#fmt').value, q = parseFloat(ws.querySelector('#q').value);
+    const scale = parseFloat(ws.querySelector('#scale').value);
     setStatus(ws, 'Reading PDF…');
     const pdf = await pdfjsLib.getDocument({ data: await readAsArrayBuffer(file) }).promise;
     const zip = new JSZip();
     for (let p = 1; p <= pdf.numPages; p++){
       setStatus(ws, `Rendering page ${p}/${pdf.numPages}…`);
       const page = await pdf.getPage(p);
-      const vp = page.getViewport({ scale: 2 });
+      const vp = page.getViewport({ scale });
       const cv = document.createElement('canvas');
       cv.width = vp.width; cv.height = vp.height;
       await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
@@ -328,7 +333,34 @@ BUILDERS.pdf2img = function(ws){
 /* ================= 3. MERGE PDF ================= */
 BUILDERS.merge = function(ws){
   let files = [];
-  makeDrop(ws, 'application/pdf (.pdf) — select in merge order', true, f => { files = f.filter(x => x.type === 'application/pdf'); showFiles(ws, files); });
+  function renderOrder(){
+    let list = ws.querySelector('.filelist');
+    if (!list){ list = el('<div class="filelist"></div>'); ws.querySelector('#wsBody').appendChild(list); }
+    list.innerHTML = '';
+    files.forEach((f, i) => {
+      const chip = el(`<span class="filechip" style="display:inline-flex;align-items:center;gap:6px">📎 ${f.name}
+        <button data-a="up" ${i===0?'disabled':''} style="cursor:pointer;border:none;background:none;font-size:.9rem">▲</button>
+        <button data-a="dn" ${i===files.length-1?'disabled':''} style="cursor:pointer;border:none;background:none;font-size:.9rem">▼</button>
+        <button data-a="rm" style="cursor:pointer;border:none;background:none;font-size:.9rem">✕</button></span>`);
+      chip.querySelectorAll('button').forEach(b => b.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const a = b.dataset.a;
+        if (a === 'up' && i > 0) [files[i-1], files[i]] = [files[i], files[i-1]];
+        if (a === 'dn' && i < files.length - 1) [files[i+1], files[i]] = [files[i], files[i+1]];
+        if (a === 'rm') files.splice(i, 1);
+        renderOrder();
+      }));
+      list.appendChild(chip);
+    });
+    const hint = ws.querySelector('.mergehint');
+    if (hint) hint.textContent = files.length ? 'Top file comes first. Use ▲ ▼ to reorder.' : '';
+  }
+  makeDrop(ws, 'application/pdf (.pdf) — add more anytime', true, f => {
+    files = files.concat(f.filter(x => x.type === 'application/pdf'));
+    renderOrder();
+  });
+  const hintEl = el('<div class="status mergehint"></div>');
+  ws.querySelector('#wsBody').appendChild(hintEl);
   actionRow(ws, 'Merge PDFs', async () => {
     if (files.length < 2) return setStatus(ws, 'Please choose at least 2 PDF files.', 'err');
     setStatus(ws, 'Merging…');
@@ -440,111 +472,221 @@ BUILDERS.pdf2text = function(ws){
     setStatus(ws, `Done — text from ${pdf.numPages} page(s) extracted.`, 'ok');
   }, 'Reset');
 };
-/* ================= 8. PASSPORT PHOTO PRO ================= */
+/* ================= 8. PASSPORT PHOTO STUDIO ================= */
 BUILDERS.passport = function(ws){
   let imgEl = null, imgFile = null, cutoutURL = null;
-  const SIZES = {
-    'us':   { label:'US Visa 2×2 in (600×600)', w:600, h:600 },
-    'eu':   { label:'35×45 mm (413×531)', w:413, h:531 },
-    'in35': { label:'35×35 mm (413×413)', w:413, h:413 },
+  const PRESETS = {
+    'us':   { label:'US Visa 2×2 in', w:2, h:2, unit:'in' },
+    'eu':   { label:'35×45 mm (EU)', w:35, h:45, unit:'mm' },
+    'sq35': { label:'35×35 mm', w:35, h:35, unit:'mm' },
+    'cm3545': { label:'3.5×4.5 cm', w:3.5, h:4.5, unit:'cm' },
+    'custom': { label:'Custom size…', custom:true },
   };
-  const BG = {
-    'white': { label:'White', c:'#ffffff' },
-    'blue':  { label:'Blue', c:'#3b7dd8' },
-    'lightblue': { label:'Light blue', c:'#cfe3fa' },
-    'red':   { label:'Red', c:'#d94343' },
+  const SHEETS = {
+    'a4':  { label:'A4 sheet', w:2480, h:3508 },
+    'a5':  { label:'Half A4 (A5) sheet', w:1748, h:2480 },
+    'p46': { label:'4×6 inch sheet', w:1800, h:1200 },
   };
+  const S = { sizeKey:'us', cw:35, ch:45, cunit:'mm', dpi:300,
+              zoom:1.2, ox:0, oy:0, bright:100, contrast:100, saturate:100,
+              bgRemove:false, bgColor:'#ffffff', outMode:'single-jpg' };
+
   makeDrop(ws, 'image/* — one portrait photo', false, async f => {
     imgFile = f[0]; cutoutURL = null;
     imgEl = await loadImage(await readAsDataURL(imgFile));
     showFiles(ws, [imgFile]);
-    drawPreview();
-  });
-  const row = el(`<div class="row">
-    <label class="field">Photo size<select id="psize">
-      <option value="us">US Visa 2×2 in (600×600)</option>
-      <option value="eu">35×45 mm (413×531)</option>
-      <option value="in35">35×35 mm (413×413)</option>
-    </select></label>
-    <label class="field">Zoom<input id="pzoom" type="range" min="1" max="3" step="0.05" value="1.2"></label>
-    <label class="field">Output<select id="pout"><option value="single">Single photo (JPG)</option><option value="sheet">4×6 print sheet</option></select></label>
-  </div>`);
-  ws.querySelector('#wsBody').appendChild(row);
-  const row2 = el(`<div class="row">
-    <label class="field" style="flex-direction:row;align-items:center;gap:8px"><input id="prm" type="checkbox" style="width:18px;height:18px;accent-color:#8b5cf6"> Remove background (AI)</label>
-    <label class="field" id="bgwrap" style="display:none">Background color<select id="pbg">
-      <option value="white">White</option><option value="lightblue">Light blue</option>
-      <option value="blue">Blue</option><option value="red">Red</option>
-    </select></label>
-  </div>`);
-  ws.querySelector('#wsBody').appendChild(row2);
-  const cv = el('<canvas class="preview" width="420" height="420"></canvas>');
-  ws.querySelector('#wsBody').appendChild(cv);
-  p_note(ws, 'Tip: face the camera, plain background. AI removal lets you swap the background to any ID-photo color.');
-  ws.querySelector('#pzoom').addEventListener('input', drawPreview);
-  ws.querySelector('#psize').addEventListener('change', drawPreview);
-  ws.querySelector('#prm').addEventListener('change', e => {
-    ws.querySelector('#bgwrap').style.display = e.target.checked ? 'flex' : 'none';
-    drawPreview();
+    S.ox = 0; S.oy = 0;
+    refreshPreview();
   });
 
+  // Row 1: size
+  const r1 = el(`<div class="row">
+    <label class="field">Photo size<select id="psize">
+      ${Object.entries(PRESETS).map(([k,v]) => `<option value="${k}">${v.label}</option>`).join('')}
+    </select></label>
+    <span id="customwrap" style="display:none;contents">
+      <label class="field">Width<input id="cw" type="number" min="1" value="35" style="width:84px"></label>
+      <label class="field">Height<input id="ch" type="number" min="1" value="45" style="width:84px"></label>
+      <label class="field">Unit<select id="cunit"><option value="mm">mm</option><option value="cm">cm</option><option value="in">inch</option></select></label>
+    </span>
+    <label class="field">DPI<input id="dpi" type="number" min="72" max="600" value="300" style="width:84px"></label>
+  </div>`);
+  ws.querySelector('#wsBody').appendChild(r1);
+
+  // Row 2: crop + photo editing
+  const r2 = el(`<div class="row">
+    <label class="field">Zoom <span id="zv">120%</span><input id="pzoom" type="range" min="1" max="3" step="0.05" value="1.2"></label>
+    <label class="field">Brightness <span id="bv">100%</span><input id="bright" type="range" min="40" max="160" value="100"></label>
+    <label class="field">Contrast <span id="cv2">100%</span><input id="contr" type="range" min="40" max="160" value="100"></label>
+    <label class="field">Saturation <span id="sv">100%</span><input id="satur" type="range" min="0" max="200" value="100"></label>
+  </div>`);
+  ws.querySelector('#wsBody').appendChild(r2);
+
+  // Row 3: background + output
+  const r3 = el(`<div class="row">
+    <label class="field" style="flex-direction:row;align-items:center;gap:8px"><input id="prm" type="checkbox" style="width:18px;height:18px;accent-color:#8b5cf6"> AI remove background</label>
+    <label class="field" id="bgwrap" style="display:none">Background<select id="pbg">
+      <option value="#ffffff">White</option><option value="#cfe3fa">Light blue</option>
+      <option value="#3b7dd8">Blue</option><option value="#d94343">Red</option><option value="custom">Custom…</option>
+    </select></label>
+    <input id="pbgcustom" type="color" value="#ffffff" style="display:none;width:44px;height:38px;border:1px solid var(--input-border);border-radius:10px;padding:2px">
+    <label class="field">Download as<select id="pout">
+      <option value="single-jpg">Single photo (JPG)</option>
+      <option value="single-png">Single photo (PNG)</option>
+      <option value="tiny50">Single photo ≤ 50KB (for portals)</option>
+      <option value="a4">A4 print sheet</option>
+      <option value="a5">Half A4 print sheet</option>
+      <option value="p46">4×6 print sheet</option>
+    </select></label>
+  </div>`);
+  ws.querySelector('#wsBody').appendChild(r3);
+
+  const cv = el('<canvas class="preview" width="440" height="440" style="cursor:grab;touch-action:none"></canvas>');
+  ws.querySelector('#wsBody').appendChild(cv);
+  const dimsLine = el('<div class="status" id="dims"></div>');
+  ws.querySelector('#wsBody').appendChild(dimsLine);
+  p_note(ws, 'Drag the photo to reposition. Tune brightness/contrast/saturation, then pick single download or a print sheet.');
+
+  // ---- wiring ----
+  const q = s => ws.querySelector(s);
+  q('#psize').addEventListener('change', e => {
+    S.sizeKey = e.target.value;
+    q('#customwrap').style.display = S.sizeKey === 'custom' ? 'contents' : 'none';
+    refreshPreview();
+  });
+  [['#cw','cw'],['#ch','ch']].forEach(([sel,k]) => q(sel).addEventListener('input', e => { S[k] = parseFloat(e.target.value) || 0; refreshPreview(); }));
+  q('#cunit').addEventListener('change', e => { S.cunit = e.target.value; refreshPreview(); });
+  q('#dpi').addEventListener('input', e => { S.dpi = parseInt(e.target.value) || 300; refreshPreview(); });
+  const sliders = [['#pzoom','zoom','zv'],['#bright','bright','bv'],['#contr','contrast','cv2'],['#satur','saturate','sv']];
+  sliders.forEach(([sel, key, lab]) => q(sel).addEventListener('input', e => {
+    S[key] = parseFloat(e.target.value);
+    q('#' + lab).textContent = (key === 'zoom' ? Math.round(S[key] * 100) : Math.round(S[key])) + '%';
+    refreshPreview();
+  }));
+  q('#prm').addEventListener('change', e => {
+    S.bgRemove = e.target.checked;
+    q('#bgwrap').style.display = S.bgRemove ? 'flex' : 'none';
+    refreshPreview();
+  });
+  q('#pbg').addEventListener('change', e => {
+    const v = e.target.value;
+    q('#pbgcustom').style.display = v === 'custom' ? 'block' : 'none';
+    S.bgColor = v === 'custom' ? q('#pbgcustom').value : v;
+    refreshPreview();
+  });
+  q('#pbgcustom').addEventListener('input', e => { S.bgColor = e.target.value; refreshPreview(); });
+  q('#pout').addEventListener('change', e => { S.outMode = e.target.value; refreshPreview(); });
+
+  let dragging = false, lx = 0, ly = 0;
+  cv.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; cv.setPointerCapture(e.pointerId); cv.style.cursor = 'grabbing'; });
+  cv.addEventListener('pointermove', e => {
+    if (!dragging || !imgEl) return;
+    const r = cv.getBoundingClientRect();
+    S.ox += (e.clientX - lx) * (cv.width / r.width);
+    S.oy += (e.clientY - ly) * (cv.height / r.height);
+    lx = e.clientX; ly = e.clientY;
+    refreshPreview();
+  });
+  ['pointerup','pointercancel'].forEach(ev => cv.addEventListener(ev, () => { dragging = false; cv.style.cursor = 'grab'; }));
+
+  // ---- rendering ----
+  function targetPx(){
+    let w, h, unit;
+    if (S.sizeKey === 'custom'){ w = S.cw; h = S.ch; unit = S.cunit; }
+    else { const p = PRESETS[S.sizeKey]; w = p.w; h = p.h; unit = p.unit; }
+    if (!w || !h) return null;
+    const toMM = v => unit === 'mm' ? v : unit === 'cm' ? v * 10 : v * 25.4;
+    return { w: Math.max(1, Math.round(toMM(w) / 25.4 * S.dpi)),
+             h: Math.max(1, Math.round(toMM(h) / 25.4 * S.dpi)) };
+  }
   async function getSource(){
-    const wantCutout = ws.querySelector('#prm').checked;
-    if (wantCutout && !cutoutURL && imgFile){
+    if (S.bgRemove && !cutoutURL && imgFile){
       const blob = await removeBackgroundAI(imgFile, msg => setStatus(ws, msg));
       cutoutURL = URL.createObjectURL(blob);
       setStatus(ws, 'Background removed.', 'ok');
     }
-    if (wantCutout && cutoutURL) return await loadImage(cutoutURL);
+    if (S.bgRemove && cutoutURL) return await loadImage(cutoutURL);
     return imgEl;
   }
-  function renderPhoto(src, targetW, targetH, zoom, bgColor){
-    const c = document.createElement('canvas');
-    c.width = targetW; c.height = targetH;
-    const ctx = c.getContext('2d');
-    ctx.fillStyle = bgColor || '#ffffff'; ctx.fillRect(0, 0, targetW, targetH);
-    if (!src) return c;
-    const s = Math.max(targetW / src.width, targetH / src.height) * zoom;
+  function paintOnto(ctx, W, H, src, panScale){
+    ctx.fillStyle = S.bgColor; ctx.fillRect(0, 0, W, H);
+    if (!src) return;
+    const s = Math.max(W / src.width, H / src.height) * S.zoom;
     const dw = src.width * s, dh = src.height * s;
-    ctx.drawImage(src, (targetW - dw)/2, (targetH - dh)/2, dw, dh);
-    return c;
+    ctx.filter = `brightness(${S.bright}%) contrast(${S.contrast}%) saturate(${S.saturate}%)`;
+    ctx.drawImage(src, (W - dw)/2 + S.ox * panScale, (H - dh)/2 + S.oy * panScale, dw, dh);
+    ctx.filter = 'none';
   }
-  async function drawPreview(){
+  let previewToken = 0;
+  async function refreshPreview(){
+    const tp = targetPx();
+    if (tp) dimsLine.textContent = `Output: ${tp.w}×${tp.h}px @ ${S.dpi} DPI`;
+    else dimsLine.textContent = '';
     if (!imgEl) return;
-    const key = ws.querySelector('#psize').value;
-    const { w, h } = SIZES[key];
-    const zoom = parseFloat(ws.querySelector('#pzoom').value);
-    const bgKey = ws.querySelector('#pbg').value;
-    const src = await getSource().catch(err => { setStatus(ws, 'AI removal failed — using original photo.', 'err'); ws.querySelector('#prm').checked = false; ws.querySelector('#bgwrap').style.display='none'; return imgEl; });
-    const out = renderPhoto(src, w, h, zoom, BG[bgKey].c);
+    const my = ++previewToken;
+    let src;
+    try { src = await getSource(); }
+    catch(err){ setStatus(ws, 'AI removal failed — using original photo.', 'err'); S.bgRemove = false; q('#prm').checked = false; q('#bgwrap').style.display = 'none'; src = imgEl; }
+    if (my !== previewToken) return;
+    const tp2 = targetPx(); if (!tp2) return;
+    const box = 440, scale = Math.min(box / tp2.w, box / tp2.h);
+    const pw = Math.round(tp2.w * scale), ph = Math.round(tp2.h * scale);
+    const full = document.createElement('canvas');
+    full.width = tp2.w; full.height = tp2.h;
+    paintOnto(full.getContext('2d'), tp2.w, tp2.h, src, tp2.w / box);
+    cv.width = pw; cv.height = ph;
     const ctx = cv.getContext('2d');
-    cv.width = 420; cv.height = Math.round(420 * h / w);
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height);
-    ctx.drawImage(out, 0, 0, cv.width, cv.height);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, pw, ph);
+    ctx.drawImage(full, 0, 0, pw, ph);
   }
-  actionRow(ws, 'Download Photo', async () => {
+  function renderSheet(photo, sheetKey){
+    const sh = SHEETS[sheetKey];
+    const c = document.createElement('canvas');
+    c.width = sh.w; c.height = sh.h;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, sh.w, sh.h);
+    const gap = 35, m = 70;
+    const cols = Math.max(1, Math.floor((sh.w - 2*m + gap) / (photo.width + gap)));
+    const rows = Math.max(1, Math.floor((sh.h - 2*m + gap) / (photo.height + gap)));
+    const gw = cols * photo.width + (cols - 1) * gap, gh = rows * photo.height + (rows - 1) * gap;
+    const ox0 = (sh.w - gw) / 2, oy0 = (sh.h - gh) / 2;
+    for (let r = 0; r < rows; r++) for (let cI = 0; cI < cols; cI++)
+      ctx.drawImage(photo, ox0 + cI * (photo.width + gap), oy0 + r * (photo.height + gap));
+    return { canvas: c, count: cols * rows, label: sh.label };
+  }
+  async function blobUnder(canvasEl, kb){
+    let lo = 0.05, hi = 0.95, best = null;
+    for (let i = 0; i < 7; i++){
+      const qq = (lo + hi) / 2;
+      const b = await new Promise(r => canvasEl.toBlob(r, 'image/jpeg', qq));
+      if (b.size <= kb * 1024){ best = b; lo = qq; } else { hi = qq; }
+    }
+    return best || await new Promise(r => canvasEl.toBlob(r, 'image/jpeg', 0.05));
+  }
+
+  actionRow(ws, 'Download', async () => {
     if (!imgEl) return setStatus(ws, 'Please choose a photo first.', 'err');
-    const key = ws.querySelector('#psize').value;
-    const { w, h, label } = SIZES[key];
-    const zoom = parseFloat(ws.querySelector('#pzoom').value);
-    const bgKey = ws.querySelector('#pbg').value;
-    const mode = ws.querySelector('#pout').value;
-    setStatus(ws, 'Preparing…');
-    const src = await getSource().catch(() => imgEl);
-    if (mode === 'single'){
-      renderPhoto(src, w, h, zoom, BG[bgKey].c).toBlob(b => {
-        download(b, 'reshii-passport.jpg'); setStatus(ws, `Done — ${label} photo downloaded.`, 'ok');
-      }, 'image/jpeg', 0.95);
+    const tp = targetPx();
+    if (!tp) return setStatus(ws, 'Enter a valid custom width and height.', 'err');
+    setStatus(ws, 'Rendering…');
+    let src;
+    try { src = await getSource(); }
+    catch(err){ src = imgEl; }
+    const photo = document.createElement('canvas');
+    photo.width = tp.w; photo.height = tp.h;
+    paintOnto(photo.getContext('2d'), tp.w, tp.h, src, tp.w / 440);
+    const mode = S.outMode;
+    if (mode === 'single-jpg' || mode === 'single-png'){
+      const type = mode === 'single-jpg' ? 'image/jpeg' : 'image/png';
+      photo.toBlob(b => { download(b, `reshii-passport.${mode === 'single-jpg' ? 'jpg' : 'png'}`); setStatus(ws, `Done — ${tp.w}×${tp.h}px photo downloaded.`, 'ok'); }, type, 0.95);
+    } else if (mode === 'tiny50'){
+      setStatus(ws, 'Optimizing under 50KB…');
+      const b = await blobUnder(photo, 50);
+      download(b, 'reshii-passport-50kb.jpg');
+      setStatus(ws, `Done — ${(b.size/1024).toFixed(1)}KB photo downloaded.`, 'ok');
     } else {
-      const sheet = document.createElement('canvas');
-      sheet.width = 1800; sheet.height = 1200;
-      const ctx = sheet.getContext('2d');
-      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 1800, 1200);
-      const photo = renderPhoto(src, w, h, zoom, BG[bgKey].c);
-      const cols = Math.floor(1800 / w), rows = Math.floor(1200 / h);
-      for (let r = 0; r < rows; r++) for (let cI = 0; cI < cols; cI++)
-        ctx.drawImage(photo, cI * w, r * h);
-      sheet.toBlob(b => { download(b, 'reshii-passport-4x6.jpg'); setStatus(ws, `Done — 4×6 print sheet (${cols*rows} copies) downloaded.`, 'ok'); }, 'image/jpeg', 0.95);
+      const { canvas: sheet, count, label } = renderSheet(photo, mode);
+      sheet.toBlob(b => { download(b, `reshii-passport-${mode}.jpg`); setStatus(ws, `Done — ${label} with ${count} copies downloaded.`, 'ok'); }, 'image/jpeg', 0.95);
     }
   }, 'Reset');
 };
