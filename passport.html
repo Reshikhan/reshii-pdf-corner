@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Passport Photo Studio — Reshii PDF Corner</title>
+<meta name="description" content="Free passport photo maker: AI background removal, background color change, crop, brightness controls, custom sizes and print sheets. 100% in your browser." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪪</text></svg>" />
+<style>
+  :root{
+    --bg:#f4f6fb; --card:rgba(255,255,255,.85); --card-border:rgba(255,255,255,.9);
+    --ink:#1c2333; --muted:#5b6579; --accent:#8b5cf6; --accent2:#ec4899;
+    --shadow:0 10px 30px rgba(60,80,140,.10); --input-bg:#ffffff; --input-border:#dbe2f0;
+  }
+  body.dark{
+    --bg:#0b1226; --card:rgba(20,28,52,.75); --card-border:rgba(255,255,255,.08);
+    --ink:#eef2ff; --muted:#9aa6c4; --shadow:0 12px 34px rgba(0,0,0,.45);
+    --input-bg:#141c38; --input-border:#2a3760;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif; color:var(--ink); min-height:100vh;
+    background:
+      radial-gradient(1000px 560px at 6% -10%, rgba(196,181,253,.38), transparent 62%),
+      radial-gradient(940px 560px at 96% 2%, rgba(249,168,212,.30), transparent 62%),
+      radial-gradient(760px 520px at 50% 112%, rgba(147,197,253,.20), transparent 62%),
+      linear-gradient(180deg,#fbfcff,#f2f4fb);
+    transition:background .35s,color .35s;
+  }
+  body.dark{
+    background:
+      radial-gradient(1000px 560px at 6% -10%, rgba(124,93,250,.16), transparent 62%),
+      radial-gradient(940px 560px at 96% 2%, rgba(236,72,153,.12), transparent 62%),
+      linear-gradient(180deg,#0b1226,#0d1430);
+  }
+  .wrap{max-width:760px; margin:0 auto; padding:0 18px}
+  header.top{position:sticky; top:0; z-index:50; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    background:color-mix(in srgb, var(--bg) 72%, transparent); border-bottom:1px solid var(--card-border)}
+  .top-inner{display:flex; align-items:center; justify-content:space-between; padding:14px 0; gap:12px}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:800; font-size:1.15rem; text-decoration:none; color:var(--ink)}
+  .brand .logo{font-size:1.6rem}
+  .theme-btn{border:1px solid var(--input-border); background:var(--card); color:var(--ink); cursor:pointer;
+    border-radius:999px; padding:9px 18px; font-weight:700; font-size:.85rem; box-shadow:var(--shadow)}
+  .hero{text-align:center; padding:40px 0 8px}
+  .hero h1{font-size:clamp(1.8rem,4.6vw,2.6rem); font-weight:800; letter-spacing:-1px; line-height:1.1}
+  .hero h1 .grad{background:linear-gradient(90deg,var(--accent),var(--accent2)); -webkit-background-clip:text; background-clip:text; color:transparent}
+  .hero p{color:var(--muted); margin-top:10px}
+  /* stepper */
+  .steps{display:flex; justify-content:center; gap:6px; margin:26px 0}
+  .step-dot{display:flex; align-items:center; gap:8px; font-size:.78rem; font-weight:700; color:var(--muted)}
+  .step-dot .n{width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    background:var(--card); border:1px solid var(--input-border); font-size:.85rem}
+  .step-dot.active{color:var(--ink)}
+  .step-dot.active .n{background:linear-gradient(90deg,var(--accent),var(--accent2)); color:#fff; border:none}
+  .step-dot.done .n{background:#16a34a; color:#fff; border:none}
+  .step-line{width:34px; height:2px; background:var(--input-border); align-self:center; border-radius:2px}
+  /* card */
+  .card{background:var(--card); border:1px solid var(--card-border); border-radius:24px;
+    box-shadow:var(--shadow); backdrop-filter:blur(14px); padding:28px; margin-bottom:26px}
+  .card h2{font-size:1.25rem; margin-bottom:6px}
+  .card .sub{color:var(--muted); font-size:.9rem; margin-bottom:18px}
+  .stepane{display:none}
+  .stepane.show{display:block; animation:fadeUp .3s ease}
+  @keyframes fadeUp{from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none}}
+  .drop{border:2px dashed var(--input-border); border-radius:18px; padding:44px 18px; text-align:center;
+    color:var(--muted); cursor:pointer; transition:border-color .2s, background .2s}
+  .drop:hover,.drop.over{border-color:var(--accent); background:color-mix(in srgb, var(--accent) 6%, transparent)}
+  .drop b{color:var(--ink); font-size:1.05rem}
+  .row{display:flex; flex-wrap:wrap; gap:14px; align-items:end; margin:16px 0}
+  .field{display:flex; flex-direction:column; gap:6px; font-size:.85rem; color:var(--muted); font-weight:600}
+  .field input,.field select{background:var(--input-bg); border:1px solid var(--input-border); color:var(--ink);
+    border-radius:12px; padding:10px 12px; font-size:.95rem}
+  .field input[type=range]{padding:0; border:none; background:none; accent-color:var(--accent); min-width:150px}
+  .field .val{color:var(--ink)}
+  .btn{background:linear-gradient(90deg,#8b5cf6,#ec4899); color:#fff; border:none; border-radius:999px;
+    padding:14px 34px; font-size:1rem; font-weight:800; cursor:pointer;
+    box-shadow:0 8px 24px rgba(139,92,246,.35); transition:transform .15s, opacity .15s}
+  .btn:hover{transform:translateY(-2px)}
+  .btn:disabled{opacity:.5; cursor:wait; transform:none}
+  .btn.ghost{background:var(--input-bg); color:var(--ink); border:1px solid var(--input-border); box-shadow:none}
+  .navrow{display:flex; justify-content:space-between; gap:12px; margin-top:22px}
+  .status{font-size:.9rem; color:var(--muted); margin-top:12px; min-height:1.4em}
+  .status.ok{color:#16a34a} .status.err{color:#dc2626}
+  body.dark .status.ok{color:#4ade80} body.dark .status.err{color:#f87171}
+  canvas.preview{max-width:100%; border-radius:16px; border:1px solid var(--input-border); display:block; margin:14px auto; touch-action:none}
+  .swatches{display:flex; gap:10px; flex-wrap:wrap; margin-top:8px}
+  .sw{width:46px; height:46px; border-radius:14px; cursor:pointer; border:3px solid transparent; box-shadow:var(--shadow)}
+  .sw.sel{border-color:var(--accent)}
+  .compare{display:flex; gap:12px; justify-content:center; margin:14px 0; flex-wrap:wrap}
+  .compare figure{text-align:center; font-size:.78rem; color:var(--muted); font-weight:600}
+  .compare img{width:150px; height:150px; object-fit:cover; border-radius:14px; border:1px solid var(--input-border); display:block; margin-bottom:6px; background:#fff}
+  footer{text-align:center; color:var(--muted); font-size:.82rem; padding:10px 0 40px}
+  @media(max-width:560px){ .card{padding:20px} }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-inner">
+    <a class="brand" href="index.html"><span class="logo">📄</span><span>Reshii PDF Corner</span></a>
+    <button class="theme-btn" id="themeToggle">🌙 Dark</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <section class="hero">
+    <h1>🪪 Passport Photo <span class="grad">Studio</span></h1>
+    <p>AI background removal, studio background colors, smart crop and print sheets — free, in your browser.</p>
+  </section>
+
+  <div class="steps" id="stepper">
+    <div class="step-dot" data-s="1"><span class="n">1</span> Upload</div><div class="step-line"></div>
+    <div class="step-dot" data-s="2"><span class="n">2</span> Background</div><div class="step-line"></div>
+    <div class="step-dot" data-s="3"><span class="n">3</span> Adjust</div><div class="step-line"></div>
+    <div class="step-dot" data-s="4"><span class="n">4</span> Download</div>
+  </div>
+
+  <div class="card">
+    <!-- STEP 1 -->
+    <div class="stepane show" id="pane1">
+      <h2>Upload your photo</h2>
+      <p class="sub">Face the camera with a plain background for best AI results.</p>
+      <div class="drop" id="drop">📁 <b>Click to choose a photo</b><br><span style="font-size:.85rem">or drag &amp; drop here — JPG, PNG, WebP</span></div>
+      <input type="file" id="fileInp" accept="image/*" style="display:none">
+      <div class="navrow"><span></span><button class="btn" id="to2" disabled>Continue →</button></div>
+    </div>
+
+    <!-- STEP 2 -->
+    <div class="stepane" id="pane2">
+      <h2>Remove the background</h2>
+      <p class="sub">One tap erases the background with AI — then pick a clean studio color.</p>
+      <div style="text-align:center; margin:10px 0">
+        <button class="btn" id="rmBg">✨ Remove background</button>
+      </div>
+      <div class="compare" id="compare" style="display:none">
+        <figure><img id="cmpOrig" alt="original"><figcaption>Original</figcaption></figure>
+        <figure><img id="cmpCut" alt="background removed"><figcaption>Background removed</figcaption></figure>
+      </div>
+      <div id="colorPick" style="display:none">
+        <div class="field">Background color
+          <div class="swatches" id="swatches">
+            <div class="sw sel" data-c="#ffffff" style="background:#ffffff" title="White"></div>
+            <div class="sw" data-c="#cfe3fa" style="background:#cfe3fa" title="Light blue"></div>
+            <div class="sw" data-c="#3b7dd8" style="background:#3b7dd8" title="Blue"></div>
+            <div class="sw" data-c="#d94343" style="background:#d94343" title="Red"></div>
+            <div class="sw" data-c="#f5e6c8" style="background:#f5e6c8" title="Cream"></div>
+          </div>
+        </div>
+        <div class="row"><label class="field">Custom color<input type="color" id="customColor" value="#ffffff" style="width:60px;height:40px;padding:2px"></label></div>
+      </div>
+      <div class="status" id="st2"></div>
+      <div class="navrow"><button class="btn ghost" data-back="1">← Back</button><button class="btn" data-next="3">Continue →</button></div>
+    </div>
+
+    <!-- STEP 3 -->
+    <div class="stepane" id="pane3">
+      <h2>Adjust your photo</h2>
+      <p class="sub">Drag to reposition. Tune the sliders until it looks right.</p>
+      <canvas class="preview" id="editCv" width="440" height="440" style="cursor:grab"></canvas>
+      <div class="row">
+        <label class="field">Zoom <span class="val" id="zv">120%</span><input type="range" id="zoom" min="1" max="3" step="0.05" value="1.2"></label>
+        <label class="field">Brightness <span class="val" id="bv">100%</span><input type="range" id="bright" min="40" max="160" value="100"></label>
+        <label class="field">Contrast <span class="val" id="cvv">100%</span><input type="range" id="contr" min="40" max="160" value="100"></label>
+        <label class="field">Saturation <span class="val" id="sv">100%</span><input type="range" id="satur" min="0" max="200" value="100"></label>
+      </div>
+      <div class="navrow"><button class="btn ghost" data-back="2">← Back</button><button class="btn" data-next="4">Continue →</button></div>
+    </div>
+
+    <!-- STEP 4 -->
+    <div class="stepane" id="pane4">
+      <h2>Size &amp; download</h2>
+      <p class="sub">Pick a country size or enter custom dimensions.</p>
+      <div class="row">
+        <label class="field">Photo size<select id="psize">
+          <option value="us">US Visa 2×2 in</option>
+          <option value="eu">35×45 mm (EU)</option>
+          <option value="sq35">35×35 mm</option>
+          <option value="cm3545">3.5×4.5 cm</option>
+          <option value="custom">Custom size…</option>
+        </select></label>
+        <span id="customwrap" style="display:none;contents">
+          <label class="field">Width<input type="number" id="cw" value="35" min="1" style="width:84px"></label>
+          <label class="field">Height<input type="number" id="ch" value="45" min="1" style="width:84px"></label>
+          <label class="field">Unit<select id="cunit"><option value="mm">mm</option><option value="cm">cm</option><option value="in">inch</option></select></label>
+        </span>
+        <label class="field">DPI<input type="number" id="dpi" value="300" min="72" max="600" style="width:84px"></label>
+      </div>
+      <div class="row">
+        <label class="field">Download as<select id="pout">
+          <option value="single-jpg">Single photo (JPG)</option>
+          <option value="single-png">Single photo (PNG)</option>
+          <option value="tiny50">Single photo ≤ 50KB (portals)</option>
+          <option value="a4">A4 print sheet</option>
+          <option value="a5">Half A4 print sheet</option>
+          <option value="p46">4×6 print sheet</option>
+        </select></label>
+      </div>
+      <div class="status" id="dims"></div>
+      <canvas class="preview" id="finalCv" width="440" height="440"></canvas>
+      <div class="status" id="st4"></div>
+      <div class="navrow"><button class="btn ghost" data-back="3">← Back</button><button class="btn" id="dlBtn">⬇ Download</button></div>
+    </div>
+  </div>
+
+  <footer>🔒 Your photo never leaves your device — AI processing runs in your browser.</footer>
+</div>
+<script>
+'use strict';
+/* ============ Passport Photo Studio — step wizard ============ */
+
+// Theme (shared key with main site)
+const themeBtn = document.getElementById('themeToggle');
+function applyTheme(m){
+  document.body.classList.toggle('dark', m === 'dark');
+  themeBtn.textContent = m === 'dark' ? '☀️ Light' : '🌙 Dark';
+  try{ localStorage.setItem('reshii-pdf-theme', m); }catch(e){}
+}
+applyTheme((function(){ try{ return localStorage.getItem('reshii-pdf-theme') || 'light'; }catch(e){ return 'light'; } })());
+themeBtn.addEventListener('click', () => applyTheme(document.body.classList.contains('dark') ? 'light' : 'dark'));
+
+// State
+const S = {
+  file:null, img:null, cutoutURL:null, bgRemoved:false, bgColor:'#ffffff',
+  sizeKey:'us', cw:35, ch:45, cunit:'mm', dpi:300,
+  zoom:1.2, ox:0, oy:0, bright:100, contrast:100, saturate:100, out:'single-jpg'
+};
+const PRESETS = {
+  us:{ w:2, h:2, unit:'in' }, eu:{ w:35, h:45, unit:'mm' },
+  sq35:{ w:35, h:35, unit:'mm' }, cm3545:{ w:3.5, h:4.5, unit:'cm' },
+};
+const SHEETS = {
+  a4:{ label:'A4', w:2480, h:3508 }, a5:{ label:'Half A4', w:1748, h:2480 }, p46:{ label:'4×6 inch', w:1800, h:1200 },
+};
+
+const $ = id => document.getElementById(id);
+function setStatus(id, msg, cls){
+  const s = $(id); if(!s) return;
+  s.textContent = msg; s.className = 'status' + (cls ? ' ' + cls : '');
+}
+function download(blob, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+}
+function readAsDataURL(f){
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
+}
+function loadImage(src){
+  return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+}
+
+// AI background removal (lazy, cached)
+let _bgModule = null;
+async function removeBackgroundAI(file, onStatus){
+  if (!_bgModule){
+    if (onStatus) onStatus('Loading AI model (one-time download, ~40MB)…');
+    _bgModule = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal/+esm');
+  }
+  if (onStatus) onStatus('Removing background…');
+  return await _bgModule.removeBackground(file);
+}
+
+// Stepper
+let step = 1;
+function goStep(n){
+  step = n;
+  document.querySelectorAll('.stepane').forEach(p => p.classList.remove('show'));
+  $('pane' + n).classList.add('show');
+  document.querySelectorAll('.step-dot').forEach(d => {
+    const s = +d.dataset.s;
+    d.classList.toggle('active', s === n);
+    d.classList.toggle('done', s < n);
+    d.querySelector('.n').textContent = s < n ? '✓' : s;
+  });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (n === 3) drawEdit();
+  if (n === 4) drawFinal();
+}
+document.querySelectorAll('[data-next]').forEach(b => b.addEventListener('click', () => goStep(+b.dataset.next)));
+document.querySelectorAll('[data-back]').forEach(b => b.addEventListener('click', () => goStep(+b.dataset.back)));
+
+// Step 1 — upload
+const drop = $('drop'), fileInp = $('fileInp');
+drop.addEventListener('click', () => fileInp.click());
+['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => { if (e.dataTransfer.files.length) takeFile(e.dataTransfer.files[0]); });
+fileInp.addEventListener('change', () => { if (fileInp.files.length) takeFile(fileInp.files[0]); fileInp.value = ''; });
+async function takeFile(f){
+  if (!f.type.startsWith('image/')) return;
+  S.file = f; S.cutoutURL = null; S.bgRemoved = false;
+  S.img = await loadImage(await readAsDataURL(f));
+  S.ox = 0; S.oy = 0;
+  drop.innerHTML = `✅ <b>${f.name}</b><br><span style="font-size:.85rem">tap to choose a different photo</span>`;
+  $('to2').disabled = false;
+}
+$('to2').addEventListener('click', () => goStep(2));
+
+// Step 2 — background
+$('rmBg').addEventListener('click', async () => {
+  if (!S.file) return;
+  const btn = $('rmBg'); btn.disabled = true;
+  try{
+    const blob = await removeBackgroundAI(S.file, m => setStatus('st2', m));
+    S.cutoutURL = URL.createObjectURL(blob);
+    S.bgRemoved = true;
+    $('cmpOrig').src = URL.createObjectURL(S.file);
+    $('cmpCut').src = S.cutoutURL;
+    $('compare').style.display = 'flex';
+    $('colorPick').style.display = 'block';
+    setStatus('st2', 'Background removed — pick a color below.', 'ok');
+    btn.textContent = '↻ Remove again';
+  }catch(err){
+    setStatus('st2', 'Could not load the AI model. Check your connection and try again.', 'err');
+  }finally{ btn.disabled = false; }
+});
+document.querySelectorAll('#swatches .sw').forEach(sw => sw.addEventListener('click', () => {
+  document.querySelectorAll('#swatches .sw').forEach(x => x.classList.remove('sel'));
+  sw.classList.add('sel');
+  S.bgColor = sw.dataset.c;
+}));
+$('customColor').addEventListener('input', e => {
+  S.bgColor = e.target.value;
+  document.querySelectorAll('#swatches .sw').forEach(x => x.classList.remove('sel'));
+});
+
+// Shared rendering
+function targetPx(){
+  let w, h, unit;
+  if (S.sizeKey === 'custom'){ w = S.cw; h = S.ch; unit = S.cunit; }
+  else { const p = PRESETS[S.sizeKey]; w = p.w; h = p.h; unit = p.unit; }
+  if (!w || !h) return null;
+  const toMM = v => unit === 'mm' ? v : unit === 'cm' ? v * 10 : v * 25.4;
+  return { w: Math.max(1, Math.round(toMM(w) / 25.4 * S.dpi)),
+           h: Math.max(1, Math.round(toMM(h) / 25.4 * S.dpi)) };
+}
+async function getSource(){
+  if (S.bgRemoved && S.cutoutURL) return await loadImage(S.cutoutURL);
+  return S.img;
+}
+function paintPhoto(ctx, W, H, src, panScale){
+  ctx.fillStyle = S.bgColor; ctx.fillRect(0, 0, W, H);
+  if (!src) return;
+  const s = Math.max(W / src.width, H / src.height) * S.zoom;
+  const dw = src.width * s, dh = src.height * s;
+  ctx.filter = `brightness(${S.bright}%) contrast(${S.contrast}%) saturate(${S.saturate}%)`;
+  ctx.drawImage(src, (W - dw)/2 + S.ox * panScale, (H - dh)/2 + S.oy * panScale, dw, dh);
+  ctx.filter = 'none';
+}
+
+// Step 3 — adjust
+const editCv = $('editCv');
+let dragging = false, lx = 0, ly = 0;
+editCv.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; editCv.setPointerCapture(e.pointerId); editCv.style.cursor = 'grabbing'; });
+editCv.addEventListener('pointermove', e => {
+  if (!dragging || !S.img) return;
+  const r = editCv.getBoundingClientRect();
+  S.ox += (e.clientX - lx) * (editCv.width / r.width);
+  S.oy += (e.clientY - ly) * (editCv.height / r.height);
+  lx = e.clientX; ly = e.clientY;
+  drawEdit();
+});
+['pointerup','pointercancel'].forEach(ev => editCv.addEventListener(ev, () => { dragging = false; editCv.style.cursor = 'grab'; }));
+[['zoom','zoom','zv', v => Math.round(v*100)+'%'],['bright','bright','bv', v => Math.round(v)+'%'],
+ ['contr','contrast','cvv', v => Math.round(v)+'%'],['satur','saturate','sv', v => Math.round(v)+'%']
+].forEach(([id, key, lab, fmt]) => $(id).addEventListener('input', e => {
+  S[key] = parseFloat(e.target.value);
+  $(lab).textContent = fmt(S[key]);
+  drawEdit();
+}));
+let editToken = 0;
+async function drawEdit(){
+  if (!S.img) return;
+  const my = ++editToken;
+  const src = await getSource().catch(() => S.img);
+  if (my !== editToken) return;
+  const tp = targetPx() || { w:600, h:600 };
+  const box = 440, sc = Math.min(box / tp.w, box / tp.h);
+  const pw = Math.round(tp.w * sc), ph = Math.round(tp.h * sc);
+  const full = document.createElement('canvas');
+  full.width = tp.w; full.height = tp.h;
+  paintPhoto(full.getContext('2d'), tp.w, tp.h, src, tp.w / box);
+  editCv.width = pw; editCv.height = ph;
+  const ctx = editCv.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, pw, ph);
+  ctx.drawImage(full, 0, 0, pw, ph);
+}
+
+// Step 4 — size & download
+$('psize').addEventListener('change', e => {
+  S.sizeKey = e.target.value;
+  $('customwrap').style.display = S.sizeKey === 'custom' ? 'contents' : 'none';
+  drawFinal();
+});
+[['cw','cw'],['ch','ch']].forEach(([id, k]) => $(id).addEventListener('input', e => { S[k] = parseFloat(e.target.value) || 0; drawFinal(); }));
+$('cunit').addEventListener('change', e => { S.cunit = e.target.value; drawFinal(); });
+$('dpi').addEventListener('input', e => { S.dpi = parseInt(e.target.value) || 300; drawFinal(); });
+$('pout').addEventListener('change', e => { S.out = e.target.value; });
+let finalToken = 0;
+async function drawFinal(){
+  if (!S.img) return;
+  const my = ++finalToken;
+  const src = await getSource().catch(() => S.img);
+  if (my !== finalToken) return;
+  const tp = targetPx(); if (!tp) return;
+  $('dims').textContent = `Output: ${tp.w}×${tp.h}px @ ${S.dpi} DPI`;
+  const full = document.createElement('canvas');
+  full.width = tp.w; full.height = tp.h;
+  paintPhoto(full.getContext('2d'), tp.w, tp.h, src, tp.w / 440);
+  const fc = $('finalCv');
+  const box = 440, sc = Math.min(box / tp.w, box / tp.h);
+  fc.width = Math.round(tp.w * sc); fc.height = Math.round(tp.h * sc);
+  const ctx = fc.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, fc.width, fc.height);
+  ctx.drawImage(full, 0, 0, fc.width, fc.height);
+}
+function renderSheet(photo, key){
+  const sh = SHEETS[key];
+  const c = document.createElement('canvas');
+  c.width = sh.w; c.height = sh.h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, sh.w, sh.h);
+  const gap = 35, m = 70;
+  const cols = Math.max(1, Math.floor((sh.w - 2*m + gap) / (photo.width + gap)));
+  const rows = Math.max(1, Math.floor((sh.h - 2*m + gap) / (photo.height + gap)));
+  const gw = cols * photo.width + (cols-1) * gap, gh = rows * photo.height + (rows-1) * gap;
+  const ox0 = (sh.w - gw)/2, oy0 = (sh.h - gh)/2;
+  for (let r = 0; r < rows; r++) for (let ci = 0; ci < cols; ci++)
+    ctx.drawImage(photo, ox0 + ci * (photo.width + gap), oy0 + r * (photo.height + gap));
+  return { canvas:c, count: cols * rows, label: sh.label };
+}
+async function blobUnder(canvasEl, kb){
+  let lo = 0.05, hi = 0.95, best = null;
+  for (let i = 0; i < 7; i++){
+    const q = (lo + hi) / 2;
+    const b = await new Promise(r => canvasEl.toBlob(r, 'image/jpeg', q));
+    if (b.size <= kb * 1024){ best = b; lo = q; } else { hi = q; }
+  }
+  return best || await new Promise(r => canvasEl.toBlob(r, 'image/jpeg', 0.05));
+}
+$('dlBtn').addEventListener('click', async () => {
+  const btn = $('dlBtn'); btn.disabled = true;
+  try{
+    const tp = targetPx();
+    if (!tp){ setStatus('st4', 'Enter a valid custom width and height.', 'err'); return; }
+    setStatus('st4', 'Rendering…');
+    const src = await getSource().catch(() => S.img);
+    const photo = document.createElement('canvas');
+    photo.width = tp.w; photo.height = tp.h;
+    paintPhoto(photo.getContext('2d'), tp.w, tp.h, src, tp.w / 440);
+    const mode = S.out;
+    if (mode === 'single-jpg' || mode === 'single-png'){
+      const type = mode === 'single-jpg' ? 'image/jpeg' : 'image/png';
+      const b = await new Promise(r => photo.toBlob(r, type, 0.95));
+      download(b, `reshii-passport.${mode === 'single-jpg' ? 'jpg' : 'png'}`);
+      setStatus('st4', `Done — ${tp.w}×${tp.h}px photo downloaded.`, 'ok');
+    } else if (mode === 'tiny50'){
+      setStatus('st4', 'Optimizing under 50KB…');
+      const b = await blobUnder(photo, 50);
+      download(b, 'reshii-passport-50kb.jpg');
+      setStatus('st4', `Done — ${(b.size/1024).toFixed(1)}KB photo downloaded.`, 'ok');
+    } else {
+      const { canvas: sheet, count, label } = renderSheet(photo, mode);
+      const b = await new Promise(r => sheet.toBlob(r, 'image/jpeg', 0.95));
+      download(b, `reshii-passport-${mode}.jpg`);
+      setStatus('st4', `Done — ${label} sheet with ${count} copies downloaded.`, 'ok');
+    }
+  } finally { btn.disabled = false; }
+});
+</script>
+</body>
+</html>
