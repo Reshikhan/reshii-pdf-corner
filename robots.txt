@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://reshikhan.github.io/reshii-pdf-corner/sitemap.xml
