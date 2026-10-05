@@ -172,7 +172,13 @@
       </div>
       <canvas class="preview" id="editCv" width="440" height="440" style="cursor:grab"></canvas>
       <div class="row">
-        <label class="field">Zoom <span class="val" id="zv">120%</span><input type="range" id="zoom" min="1" max="3" step="0.05" value="1.2"></label>
+        <label class="field">Zoom <span class="val" id="zv">120%</span>
+          <span style="display:flex;align-items:center;gap:10px">
+            <button class="btn ghost" id="zOut" type="button" style="padding:8px 16px;font-size:1.1rem">−</button>
+            <input type="range" id="zoom" min="1" max="3" step="0.05" value="1.2" style="flex:1;min-width:120px">
+            <button class="btn ghost" id="zIn" type="button" style="padding:8px 16px;font-size:1.1rem">+</button>
+          </span>
+        </label>
         <label class="field">Brightness <span class="val" id="bv">100%</span><input type="range" id="bright" min="40" max="160" value="100"></label>
         <label class="field">Contrast <span class="val" id="cvv">100%</span><input type="range" id="contr" min="40" max="160" value="100"></label>
         <label class="field">Saturation <span class="val" id="sv">100%</span><input type="range" id="satur" min="0" max="200" value="100"></label>
@@ -361,7 +367,16 @@ editCv.addEventListener('pointermove', e => {
   drawEdit();
 });
 ['pointerup','pointercancel'].forEach(ev => editCv.addEventListener(ev, () => { dragging = false; editCv.style.cursor = 'grab'; }));
-[['zoom','zoom','zv', v => Math.round(v*100)+'%'],['bright','bright','bv', v => Math.round(v)+'%'],
+function setZoom(v){
+  S.zoom = Math.min(3, Math.max(1, Math.round(v * 20) / 20));
+  $('zoom').value = S.zoom;
+  $('zv').textContent = Math.round(S.zoom * 100) + '%';
+  drawEdit();
+}
+$('zoom').addEventListener('input', e => setZoom(parseFloat(e.target.value)));
+$('zIn').addEventListener('click', () => setZoom(S.zoom + 0.2));
+$('zOut').addEventListener('click', () => setZoom(S.zoom - 0.2));
+[['bright','bright','bv', v => Math.round(v)+'%'],
  ['contr','contrast','cvv', v => Math.round(v)+'%'],['satur','saturate','sv', v => Math.round(v)+'%']
 ].forEach(([id, key, lab, fmt]) => $(id).addEventListener('input', e => {
   S[key] = parseFloat(e.target.value);
