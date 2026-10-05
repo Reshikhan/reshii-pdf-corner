@@ -197,8 +197,9 @@ function setStatus(ws, msg, cls){
   const s = ws.querySelector('.status');
   if (s){ s.textContent = msg; s.className = 'status' + (cls ? ' ' + cls : ''); }
 }
-function makeDrop(ws, accept, multiple, onFiles){
-  const dz = el(`<div class="drop">📁 <b>Click to choose files</b> or drag & drop here<div style="font-size:.8rem;margin-top:6px">${accept}</div></div>`);
+function makeDrop(ws, accept, multiple, onFiles, label){
+  const pretty = label || (accept === 'image/*' ? '.png, .jpg, .webp' : accept === 'application/pdf' ? '.pdf documents' : accept);
+  const dz = el(`<div class="drop">📁 <b>Click to choose files</b> or drag & drop here<div style="font-size:.8rem;margin-top:6px">${pretty}</div></div>`);
   const inp = el(`<input type="file" accept="${accept}" ${multiple ? 'multiple' : ''} style="display:none">`);
   dz.appendChild(inp);
   dz.addEventListener('click', () => inp.click());
@@ -280,7 +281,7 @@ const BUILDERS = {};
 /* ================= 1. IMAGE → PDF ================= */
 BUILDERS.img2pdf = function(ws){
   let files = [];
-  makeDrop(ws, 'image/* (.png, .jpg, .webp)', true, f => { files = f.filter(x => x.type.startsWith('image/')); showFiles(ws, files); });
+  makeDrop(ws, 'image/*', true, f => { files = f.filter(x => x.type.startsWith('image/')); showFiles(ws, files); });
   const row = el(`<div class="row"><label class="field">Page style<select id="pstyle">
     <option value="margins">🤍 White page with margins</option>
     <option value="bleed">🖼️ Full-bleed — no borders</option>
@@ -317,32 +318,57 @@ BUILDERS.img2pdf = function(ws){
 /* ================= 2. PDF → IMAGES ================= */
 BUILDERS.pdf2img = function(ws){
   let file = null;
-  makeDrop(ws, 'application/pdf (.pdf)', false, f => { file = f[0]; showFiles(ws, [file]); });
+  makeDrop(ws, 'application/pdf', false, f => {
+    file = f[0]; showFiles(ws, [file]);
+    const g = ws.querySelector('#imgResults'); if (g) g.innerHTML = '';
+    setStatus(ws, '');
+  }, '.pdf documents');
   const row = el(`<div class="row"><label class="field">Format<select id="fmt"><option value="png">PNG</option><option value="jpeg">JPG</option></select></label>
     <label class="field">Resolution<select id="scale"><option value="1.5">Standard (1.5×)</option><option value="2" selected>High (2×)</option><option value="3">Ultra (3×)</option></select></label>
     <label class="field">Quality (JPG)<input id="q" type="range" min="0.4" max="1" step="0.05" value="0.85"></label></div>`);
   ws.querySelector('#wsBody').appendChild(row);
-  p_note(ws, 'Each page downloads as a separate picture. If your browser asks, allow multiple downloads.');
+  const gal = el('<div id="imgResults" style="display:flex;flex-wrap:wrap;gap:18px;margin-top:8px"></div>');
+  ws.querySelector('#wsBody').appendChild(gal);
+  p_note(ws, 'Each page appears below as a picture — tap ⬇ Download under it. (On iPhone: if it opens instead, long-press the picture → Save to Photos.)');
   actionRow(ws, 'Convert to Images', async () => {
     if (!file) return setStatus(ws, 'Please choose a PDF file.', 'err');
     const fmt = ws.querySelector('#fmt').value, q = parseFloat(ws.querySelector('#q').value);
     const scale = parseFloat(ws.querySelector('#scale').value);
     const ext = fmt === 'png' ? 'png' : 'jpg';
     const mime = fmt === 'png' ? 'image/png' : 'image/jpeg';
-    setStatus(ws, 'Reading PDF…');
-    const pdf = await pdfjsLib.getDocument({ data: await readAsArrayBuffer(file) }).promise;
-    for (let p = 1; p <= pdf.numPages; p++){
-      setStatus(ws, `Rendering & downloading page ${p}/${pdf.numPages}…`);
-      const page = await pdf.getPage(p);
-      const vp = page.getViewport({ scale });
-      const cv = document.createElement('canvas');
-      cv.width = vp.width; cv.height = vp.height;
-      await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
-      const blob = await new Promise(r => cv.toBlob(r, mime, q));
-      download(blob, `reshii-page-${p}.${ext}`);
-      if (p < pdf.numPages) await new Promise(r => setTimeout(r, 500));
+    const gallery = ws.querySelector('#imgResults');
+    gallery.innerHTML = '';
+    let pdf;
+    try {
+      setStatus(ws, 'Reading PDF…');
+      pdf = await pdfjsLib.getDocument({ data: await readAsArrayBuffer(file) }).promise;
+    } catch(err){ return setStatus(ws, 'Could not read this PDF. It may be corrupted or password-protected.', 'err'); }
+    for (let pg = 1; pg <= pdf.numPages; pg++){
+      try {
+        setStatus(ws, `Rendering page ${pg}/${pdf.numPages}…`);
+        const page = await pdf.getPage(pg);
+        const vp = page.getViewport({ scale });
+        const cv = document.createElement('canvas');
+        cv.width = vp.width; cv.height = vp.height;
+        await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        const blob = await new Promise(r => cv.toBlob(r, mime, q));
+        if (!blob) throw new Error('render failed');
+        const url = URL.createObjectURL(blob);
+        const card = el(`<div style="text-align:center">
+          <img src="${url}" alt="Page ${pg}" style="max-width:170px;max-height:220px;border-radius:12px;border:1px solid var(--input-border);box-shadow:var(--shadow)">
+          <div style="font-size:.82rem;color:var(--muted);margin:8px 0;font-weight:600">Page ${pg}</div>
+        </div>`);
+        const dl = el(`<a class="btn ghost" style="text-decoration:none;padding:9px 20px;font-size:.85rem;display:inline-block">⬇ Download</a>`);
+        dl.href = url;
+        dl.setAttribute('download', `reshii-page-${pg}.${ext}`);
+        card.appendChild(dl);
+        gallery.appendChild(card);
+      } catch(err){
+        setStatus(ws, `Failed on page ${pg}. Try a lower resolution.`, 'err');
+        return;
+      }
     }
-    setStatus(ws, `Done — ${pdf.numPages} picture(s) downloaded.`, 'ok');
+    setStatus(ws, `Done — ${pdf.numPages} picture(s) ready. Tap Download under each one.`, 'ok');
   }, 'Reset');
 };
 
@@ -371,10 +397,10 @@ BUILDERS.merge = function(ws){
     const hint = ws.querySelector('.mergehint');
     if (hint) hint.textContent = files.length ? 'Top file comes first. Use ▲ ▼ to reorder.' : '';
   }
-  makeDrop(ws, 'application/pdf (.pdf) — add more anytime', true, f => {
+  makeDrop(ws, 'application/pdf', true, f => {
     files = files.concat(f.filter(x => x.type === 'application/pdf'));
     renderOrder();
-  });
+  }, '.pdf — add more anytime');
   const hintEl = el('<div class="status mergehint"></div>');
   ws.querySelector('#wsBody').appendChild(hintEl);
   actionRow(ws, 'Merge PDFs', async () => {
@@ -393,7 +419,7 @@ BUILDERS.merge = function(ws){
 /* ================= 4. SPLIT PDF ================= */
 BUILDERS.split = function(ws){
   let file = null;
-  makeDrop(ws, 'application/pdf (.pdf)', false, f => { file = f[0]; showFiles(ws, [file]); });
+  makeDrop(ws, 'application/pdf', false, f => { file = f[0]; showFiles(ws, [file]); });
   const row = el(`<div class="row"><label class="field" style="flex:1">Pages (e.g. 1-3, 5, 7-9)<input id="rng" placeholder="1-3, 5"></label></div>`);
   ws.querySelector('#wsBody').appendChild(row);
   actionRow(ws, 'Split PDF', async () => {
@@ -421,7 +447,7 @@ BUILDERS.split = function(ws){
 /* ================= 5. COMPRESS PDF ================= */
 BUILDERS.compress = function(ws){
   let file = null;
-  makeDrop(ws, 'application/pdf (.pdf)', false, f => { file = f[0]; showFiles(ws, [file]); });
+  makeDrop(ws, 'application/pdf', false, f => { file = f[0]; showFiles(ws, [file]); });
   const row = el(`<div class="row"><label class="field">Quality<select id="cq"><option value="0.55">High (larger file)</option><option value="0.4" selected>Medium</option><option value="0.25">Low (smallest file)</option></select></label></div>`);
   ws.querySelector('#wsBody').appendChild(row);
   p_note(ws, 'Note: this re-renders pages as images — great for scanned PDFs, not ideal for text-heavy documents.');
@@ -456,7 +482,7 @@ function p_note(ws, t){
 /* ================= 6. ROTATE PDF ================= */
 BUILDERS.rotate = function(ws){
   let file = null;
-  makeDrop(ws, 'application/pdf (.pdf)', false, f => { file = f[0]; showFiles(ws, [file]); });
+  makeDrop(ws, 'application/pdf', false, f => { file = f[0]; showFiles(ws, [file]); });
   const row = el(`<div class="row"><label class="field">Rotation<select id="deg"><option value="90">90° clockwise</option><option value="180">180°</option><option value="270">270° clockwise</option></select></label></div>`);
   ws.querySelector('#wsBody').appendChild(row);
   actionRow(ws, 'Rotate PDF', async () => {
@@ -473,7 +499,7 @@ BUILDERS.rotate = function(ws){
 /* ================= 7. PDF → TEXT ================= */
 BUILDERS.pdf2text = function(ws){
   let file = null;
-  makeDrop(ws, 'application/pdf (.pdf)', false, f => { file = f[0]; showFiles(ws, [file]); });
+  makeDrop(ws, 'application/pdf', false, f => { file = f[0]; showFiles(ws, [file]); });
   actionRow(ws, 'Extract Text', async () => {
     if (!file) return setStatus(ws, 'Please choose a PDF file.', 'err');
     setStatus(ws, 'Reading PDF…');
@@ -491,7 +517,7 @@ BUILDERS.pdf2text = function(ws){
 /* ================= 8b. BACKGROUND REMOVER ================= */
 BUILDERS.bgremove = function(ws){
   let file = null;
-  makeDrop(ws, 'image/* (.png, .jpg, .webp)', false, f => { file = f[0]; showFiles(ws, [f[0]]); });
+  makeDrop(ws, 'image/*', false, f => { file = f[0]; showFiles(ws, [f[0]]); });
   const cv = el('<canvas class="preview" style="display:none"></canvas>');
   ws.querySelector('#wsBody').appendChild(cv);
   p_note(ws, 'AI runs entirely in your browser. First use downloads the model once (~40MB), then it is instant.');
@@ -524,7 +550,7 @@ BUILDERS.crop = function(ws){
   let imgEl = null;
   const RATIOS = { 'free':null, '1:1':1, '4:3':4/3, '3:4':3/4, '16:9':16/9, '9:16':9/16 };
   let ratioKey = '1:1', zoom = 1.2, ox = 0, oy = 0, dragging = false, lx = 0, ly = 0;
-  makeDrop(ws, 'image/* (.png, .jpg, .webp)', false, async f => {
+  makeDrop(ws, 'image/*', false, async f => {
     imgEl = await loadImage(await readAsDataURL(f[0]));
     showFiles(ws, [f[0]]); ox = 0; oy = 0; draw();
   });
@@ -592,7 +618,7 @@ BUILDERS.crop = function(ws){
 /* ================= 9. COMPRESS IMAGE ================= */
 BUILDERS.imgcompress = function(ws){
   let imgEl = null, origSize = 0;
-  makeDrop(ws, 'image/* (.png, .jpg, .webp)', false, async f => {
+  makeDrop(ws, 'image/*', false, async f => {
     imgEl = await loadImage(await readAsDataURL(f[0])); origSize = f[0].size;
     showFiles(ws, [f[0]]);
     setStatus(ws, `Original: ${(f[0].size/1024).toFixed(1)} KB, ${imgEl.width}×${imgEl.height}px`);
@@ -618,7 +644,7 @@ BUILDERS.imgcompress = function(ws){
 /* ================= 10. RESIZE IMAGE ================= */
 BUILDERS.imgresize = function(ws){
   let imgEl = null;
-  makeDrop(ws, 'image/* (.png, .jpg, .webp)', false, async f => {
+  makeDrop(ws, 'image/*', false, async f => {
     imgEl = await loadImage(await readAsDataURL(f[0]));
     showFiles(ws, [f[0]]);
     ws.querySelector('#rw').value = imgEl.width;
@@ -651,7 +677,7 @@ BUILDERS.imgresize = function(ws){
 /* ================= 11. IMAGE CONVERTER ================= */
 BUILDERS.imgconvert = function(ws){
   let imgEl = null;
-  makeDrop(ws, 'image/* (.png, .jpg, .webp)', false, async f => {
+  makeDrop(ws, 'image/*', false, async f => {
     imgEl = await loadImage(await readAsDataURL(f[0]));
     showFiles(ws, [f[0]]);
     setStatus(ws, `${imgEl.width}×${imgEl.height}px loaded.`);
