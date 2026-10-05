@@ -110,7 +110,7 @@
   <div class="steps" id="stepper">
     <div class="step-dot" data-s="1"><span class="n">1</span> Upload</div><div class="step-line"></div>
     <div class="step-dot" data-s="2"><span class="n">2</span> Background</div><div class="step-line"></div>
-    <div class="step-dot" data-s="3"><span class="n">3</span> Adjust</div><div class="step-line"></div>
+    <div class="step-dot" data-s="3"><span class="n">3</span> Crop & Size</div><div class="step-line"></div>
     <div class="step-dot" data-s="4"><span class="n">4</span> Download</div>
   </div>
 
@@ -153,22 +153,8 @@
 
     <!-- STEP 3 -->
     <div class="stepane" id="pane3">
-      <h2>Adjust your photo</h2>
-      <p class="sub">Drag to reposition. Tune the sliders until it looks right.</p>
-      <canvas class="preview" id="editCv" width="440" height="440" style="cursor:grab"></canvas>
-      <div class="row">
-        <label class="field">Zoom <span class="val" id="zv">120%</span><input type="range" id="zoom" min="1" max="3" step="0.05" value="1.2"></label>
-        <label class="field">Brightness <span class="val" id="bv">100%</span><input type="range" id="bright" min="40" max="160" value="100"></label>
-        <label class="field">Contrast <span class="val" id="cvv">100%</span><input type="range" id="contr" min="40" max="160" value="100"></label>
-        <label class="field">Saturation <span class="val" id="sv">100%</span><input type="range" id="satur" min="0" max="200" value="100"></label>
-      </div>
-      <div class="navrow"><button class="btn ghost" data-back="2">← Back</button><button class="btn" data-next="4">Continue →</button></div>
-    </div>
-
-    <!-- STEP 4 -->
-    <div class="stepane" id="pane4">
-      <h2>Size &amp; download</h2>
-      <p class="sub">Pick a country size or enter custom dimensions.</p>
+      <h2>Choose size & adjust</h2>
+      <p class="sub">Pick the photo size first — then drag to frame it exactly.</p>
       <div class="row">
         <label class="field">Photo size<select id="psize">
           <option value="us">US Visa 2×2 in</option>
@@ -184,6 +170,20 @@
         </span>
         <label class="field">DPI<input type="number" id="dpi" value="300" min="72" max="600" style="width:84px"></label>
       </div>
+      <canvas class="preview" id="editCv" width="440" height="440" style="cursor:grab"></canvas>
+      <div class="row">
+        <label class="field">Zoom <span class="val" id="zv">120%</span><input type="range" id="zoom" min="1" max="3" step="0.05" value="1.2"></label>
+        <label class="field">Brightness <span class="val" id="bv">100%</span><input type="range" id="bright" min="40" max="160" value="100"></label>
+        <label class="field">Contrast <span class="val" id="cvv">100%</span><input type="range" id="contr" min="40" max="160" value="100"></label>
+        <label class="field">Saturation <span class="val" id="sv">100%</span><input type="range" id="satur" min="0" max="200" value="100"></label>
+      </div>
+      <div class="navrow"><button class="btn ghost" data-back="2">← Back</button><button class="btn" data-next="4">Continue →</button></div>
+    </div>
+
+    <!-- STEP 4 -->
+    <div class="stepane" id="pane4">
+      <h2>Download</h2>
+      <p class="sub">Your photo is framed and ready — pick a download format.</p>
       <div class="row">
         <label class="field">Download as<select id="pout">
           <option value="single-jpg">Single photo (JPG)</option>
