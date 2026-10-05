@@ -12,12 +12,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root{
+    color-scheme:light;
     --bg:#f4f6fb; --bg2:#eef1f8; --card:rgba(255,255,255,.82); --card-border:rgba(255,255,255,.9);
     --ink:#1c2333; --muted:#5b6579; --accent:#3b82f6; --accent2:#8b5cf6;
     --shadow:0 10px 30px rgba(60,80,140,.10); --radius:20px;
     --input-bg:#ffffff; --input-border:#dbe2f0;
   }
   body.dark{
+    color-scheme:dark;
     --bg:#0b1226; --bg2:#0e1630; --card:rgba(20,28,52,.72); --card-border:rgba(255,255,255,.08);
     --ink:#eef2ff; --muted:#9aa6c4; --accent:#60a5fa; --accent2:#a78bfa;
     --shadow:0 12px 34px rgba(0,0,0,.45); --input-bg:#141c38; --input-border:#2a3760;
@@ -99,6 +101,7 @@
   footer{border-top:1px solid var(--card-border); padding:26px 0 40px; text-align:center; color:var(--muted); font-size:.85rem}
   footer b{color:var(--ink)}
   input[type=range]{accent-color:var(--accent)}
+  option{background:var(--input-bg); color:var(--ink);}
   @media(max-width:560px){ .ws-card{padding:18px} .hero{padding:36px 0 20px} }
 </style>
 </head>
@@ -219,6 +222,79 @@ function showFiles(ws, files){
     list.appendChild(el(`<span class="filechip">📎 ${f.name}${kb}</span>`));
   });
 }
+/* ---------- small preview thumbnails (fast visual check before converting) ---------- */
+const thumbCache = new Map();
+function thumbStrip(ws){
+  let t = ws.querySelector('.thumbs');
+  if (!t){
+    t = el('<div class="thumbs" style="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0;align-items:flex-start"></div>');
+    ws.querySelector('#wsBody').appendChild(t);
+  }
+  return t;
+}
+function thumbKey(f){ return f.name + '|' + f.size; }
+async function pdfThumbURL(file, maxW){
+  maxW = maxW || 132;
+  const pdf = await pdfjsLib.getDocument({ data: await readAsArrayBuffer(file) }).promise;
+  const pages = pdf.numPages;
+  const page = await pdf.getPage(1);
+  const v0 = page.getViewport({ scale: 1 });
+  const vp = page.getViewport({ scale: Math.min(1, maxW / v0.width) });
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(vp.width)); cv.height = Math.max(1, Math.round(vp.height));
+  await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+  const url = cv.toDataURL('image/jpeg', 0.72);
+  try{ pdf.destroy(); }catch(e){}
+  return { url, pages };
+}
+async function imgThumbURL(file, maxDim){
+  maxDim = maxDim || 132;
+  const img = await loadImage(await readAsDataURL(file));
+  const s = Math.min(1, maxDim / Math.max(img.width, img.height));
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(img.width * s)); cv.height = Math.max(1, Math.round(img.height * s));
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(img, 0, 0, cv.width, cv.height);
+  return cv.toDataURL('image/jpeg', 0.72);
+}
+async function cachedPdfThumb(file){
+  const k = thumbKey(file);
+  if (!thumbCache.has(k)) thumbCache.set(k, pdfThumbURL(file).catch(() => null));
+  return thumbCache.get(k);
+}
+async function cachedImgThumb(file){
+  const k = thumbKey(file);
+  if (!thumbCache.has(k)) thumbCache.set(k, imgThumbURL(file).catch(() => null));
+  return thumbCache.get(k);
+}
+function addThumbFigure(strip, url, caption){
+  const fig = el(`<figure style="margin:0;text-align:center"><img src="${url}" alt="${caption}" style="width:88px;height:112px;object-fit:cover;border-radius:10px;border:1px solid var(--input-border);box-shadow:var(--shadow);background:#fff"><figcaption style="font-size:.7rem;color:var(--muted);margin-top:4px;max-width:88px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${caption}</figcaption></figure>`);
+  strip.appendChild(fig);
+  return fig;
+}
+async function showPdfPreview(ws, file){
+  const strip = thumbStrip(ws); strip.innerHTML = '';
+  const info = await cachedPdfThumb(file);
+  if (info) addThumbFigure(strip, info.url, `${info.pages} page${info.pages > 1 ? 's' : ''} • first page`);
+}
+async function showImgPreviews(ws, files, big){
+  const strip = thumbStrip(ws); strip.innerHTML = '';
+  for (const f of files.slice(0, 12)){
+    const url = await cachedImgThumb(f);
+    if (url){
+      if (big){
+        strip.innerHTML = `<img src="${url}" alt="preview" style="max-width:100%;max-height:230px;border-radius:14px;border:1px solid var(--input-border);box-shadow:var(--shadow)">`;
+        break;
+      }
+      addThumbFigure(strip, url, f.name.length > 14 ? f.name.slice(0, 13) + '…' : f.name);
+    }
+  }
+  if (files.length > 12){
+    const more = el(`<div style="align-self:center;font-size:.8rem;color:var(--muted)">+${files.length - 12} more</div>`);
+    strip.appendChild(more);
+  }
+}
 function actionRow(ws, label, onClick, ghostLabel){
   const row = el('<div class="row"></div>');
   const btn = el(`<button class="btn">${label}</button>`);
@@ -281,7 +357,7 @@ const BUILDERS = {};
 /* ================= 1. IMAGE → PDF ================= */
 BUILDERS.img2pdf = function(ws){
   let files = [];
-  makeDrop(ws, 'image/*', true, f => { files = f.filter(x => x.type.startsWith('image/')); showFiles(ws, files); });
+  makeDrop(ws, 'image/*', true, f => { files = f.filter(x => x.type.startsWith('image/')); showFiles(ws, files); showImgPreviews(ws, files); });
   const row = el(`<div class="row"><label class="field">Page style<select id="pstyle">
     <option value="margins">🤍 White page with margins</option>
     <option value="bleed">🖼️ Full-bleed — no borders</option>
@@ -321,7 +397,7 @@ BUILDERS.pdf2img = function(ws){
   makeDrop(ws, 'application/pdf', false, f => {
     file = f[0]; showFiles(ws, [file]);
     const g = ws.querySelector('#imgResults'); if (g) g.innerHTML = '';
-    setStatus(ws, '');
+    setStatus(ws, ''); showPdfPreview(ws, file);
   }, '.pdf documents');
   const row = el(`<div class="row"><label class="field">Format<select id="fmt"><option value="png">PNG</option><option value="jpeg">JPG</option></select></label>
     <label class="field">Resolution<select id="scale"><option value="1.5">Standard (1.5×)</option><option value="2" selected>High (2×)</option><option value="3">Ultra (3×)</option></select></label>
@@ -380,7 +456,7 @@ BUILDERS.merge = function(ws){
     if (!list){ list = el('<div class="filelist"></div>'); ws.querySelector('#wsBody').appendChild(list); }
     list.innerHTML = '';
     files.forEach((f, i) => {
-      const chip = el(`<span class="filechip" style="display:inline-flex;align-items:center;gap:6px">📎 ${f.name}
+      const chip = el(`<span class="filechip" style="display:inline-flex;align-items:center;gap:6px"><img data-th="1" alt="" style="width:30px;height:38px;object-fit:cover;border-radius:6px;border:1px solid var(--input-border);background:#fff">📎 ${f.name}
         <button data-a="up" ${i===0?'disabled':''} style="cursor:pointer;border:none;background:none;font-size:.9rem">▲</button>
         <button data-a="dn" ${i===files.length-1?'disabled':''} style="cursor:pointer;border:none;background:none;font-size:.9rem">▼</button>
         <button data-a="rm" style="cursor:pointer;border:none;background:none;font-size:.9rem">✕</button></span>`);
@@ -393,6 +469,10 @@ BUILDERS.merge = function(ws){
         renderOrder();
       }));
       list.appendChild(chip);
+      cachedPdfThumb(f).then(info => {
+        const im = chip.querySelector('[data-th]');
+        if (im && info) im.src = info.url;
+      });
     });
     const hint = ws.querySelector('.mergehint');
     if (hint) hint.textContent = files.length ? 'Top file comes first. Use ▲ ▼ to reorder.' : '';
@@ -419,7 +499,7 @@ BUILDERS.merge = function(ws){
 /* ================= 4. SPLIT PDF ================= */
 BUILDERS.split = function(ws){
   let file = null;
-  makeDrop(ws, 'application/pdf', false, f => { file = f[0]; showFiles(ws, [file]); });
+  makeDrop(ws, 'application/pdf', false, f => { file = f[0]; showFiles(ws, [file]); showPdfPreview(ws, file); });
   const row = el(`<div class="row"><label class="field" style="flex:1">Pages (e.g. 1-3, 5, 7-9)<input id="rng" placeholder="1-3, 5"></label></div>`);
   ws.querySelector('#wsBody').appendChild(row);
   actionRow(ws, 'Split PDF', async () => {
@@ -447,7 +527,7 @@ BUILDERS.split = function(ws){
 /* ================= 5. COMPRESS PDF ================= */
 BUILDERS.compress = function(ws){
   let file = null;
-  makeDrop(ws, 'application/pdf', false, f => { file = f[0]; showFiles(ws, [file]); });
+  makeDrop(ws, 'application/pdf', false, f => { file = f[0]; showFiles(ws, [file]); showPdfPreview(ws, file); });
   const row = el(`<div class="row"><label class="field">Quality<select id="cq"><option value="0.55">High (larger file)</option><option value="0.4" selected>Medium</option><option value="0.25">Low (smallest file)</option></select></label></div>`);
   ws.querySelector('#wsBody').appendChild(row);
   p_note(ws, 'Note: this re-renders pages as images — great for scanned PDFs, not ideal for text-heavy documents.');
@@ -482,7 +562,7 @@ function p_note(ws, t){
 /* ================= 6. ROTATE PDF ================= */
 BUILDERS.rotate = function(ws){
   let file = null;
-  makeDrop(ws, 'application/pdf', false, f => { file = f[0]; showFiles(ws, [file]); });
+  makeDrop(ws, 'application/pdf', false, f => { file = f[0]; showFiles(ws, [file]); showPdfPreview(ws, file); });
   const row = el(`<div class="row"><label class="field">Rotation<select id="deg"><option value="90">90° clockwise</option><option value="180">180°</option><option value="270">270° clockwise</option></select></label></div>`);
   ws.querySelector('#wsBody').appendChild(row);
   actionRow(ws, 'Rotate PDF', async () => {
@@ -537,7 +617,7 @@ async function textToDocx(pages, title){
 /* ================= 7. PDF → WORD ================= */
 BUILDERS.pdf2text = function(ws){
   let file = null;
-  makeDrop(ws, 'application/pdf', false, f => { file = f[0]; showFiles(ws, [file]); });
+  makeDrop(ws, 'application/pdf', false, f => { file = f[0]; showFiles(ws, [file]); showPdfPreview(ws, file); });
   actionRow(ws, 'Extract to Word', async () => {
     if (!file) return setStatus(ws, 'Please choose a PDF file.', 'err');
     let pdf;
@@ -563,7 +643,7 @@ BUILDERS.pdf2text = function(ws){
 /* ================= 8b. BACKGROUND REMOVER ================= */
 BUILDERS.bgremove = function(ws){
   let file = null;
-  makeDrop(ws, 'image/*', false, f => { file = f[0]; showFiles(ws, [f[0]]); });
+  makeDrop(ws, 'image/*', false, f => { file = f[0]; showFiles(ws, [f[0]]); showImgPreviews(ws, [f[0]], true); });
   const cv = el('<canvas class="preview" style="display:none"></canvas>');
   ws.querySelector('#wsBody').appendChild(cv);
   p_note(ws, 'AI runs entirely in your browser. First use downloads the model once (~40MB), then it is instant.');
@@ -666,7 +746,7 @@ BUILDERS.imgcompress = function(ws){
   let imgEl = null, origSize = 0;
   makeDrop(ws, 'image/*', false, async f => {
     imgEl = await loadImage(await readAsDataURL(f[0])); origSize = f[0].size;
-    showFiles(ws, [f[0]]);
+    showFiles(ws, [f[0]]); showImgPreviews(ws, [f[0]], true); 
     setStatus(ws, `Original: ${(f[0].size/1024).toFixed(1)} KB, ${imgEl.width}×${imgEl.height}px`);
   });
   const row = el(`<div class="row"><label class="field">Quality: <span id="qv">80%</span><input id="q" type="range" min="10" max="95" value="80"></label></div>`);
@@ -692,7 +772,7 @@ BUILDERS.imgresize = function(ws){
   let imgEl = null;
   makeDrop(ws, 'image/*', false, async f => {
     imgEl = await loadImage(await readAsDataURL(f[0]));
-    showFiles(ws, [f[0]]);
+    showFiles(ws, [f[0]]); showImgPreviews(ws, [f[0]], true); 
     ws.querySelector('#rw').value = imgEl.width;
     ws.querySelector('#rh').value = imgEl.height;
     setStatus(ws, `Original: ${imgEl.width}×${imgEl.height}px`);
@@ -725,7 +805,7 @@ BUILDERS.imgconvert = function(ws){
   let imgEl = null;
   makeDrop(ws, 'image/*', false, async f => {
     imgEl = await loadImage(await readAsDataURL(f[0]));
-    showFiles(ws, [f[0]]);
+    showFiles(ws, [f[0]]); showImgPreviews(ws, [f[0]], true); 
     setStatus(ws, `${imgEl.width}×${imgEl.height}px loaded.`);
   });
   const row = el(`<div class="row"><label class="field">Convert to<select id="cfmt"><option value="jpeg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option></select></label></div>`);

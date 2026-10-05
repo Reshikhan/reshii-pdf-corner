@@ -8,11 +8,13 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪪</text></svg>" />
 <style>
   :root{
+    color-scheme:light;
     --bg:#f4f6fb; --card:rgba(255,255,255,.85); --card-border:rgba(255,255,255,.9);
     --ink:#1c2333; --muted:#5b6579; --accent:#8b5cf6; --accent2:#ec4899;
     --shadow:0 10px 30px rgba(60,80,140,.10); --input-bg:#ffffff; --input-border:#dbe2f0;
   }
   body.dark{
+    color-scheme:dark;
     --bg:#0b1226; --card:rgba(20,28,52,.75); --card-border:rgba(255,255,255,.08);
     --ink:#eef2ff; --muted:#9aa6c4; --shadow:0 12px 34px rgba(0,0,0,.45);
     --input-bg:#141c38; --input-border:#2a3760;
@@ -90,6 +92,7 @@
   .compare figure{text-align:center; font-size:.78rem; color:var(--muted); font-weight:600}
   .compare img{width:150px; height:150px; object-fit:cover; border-radius:14px; border:1px solid var(--input-border); display:block; margin-bottom:6px; background:#fff}
   footer{text-align:center; color:var(--muted); font-size:.82rem; padding:10px 0 40px}
+  option{background:var(--input-bg); color:var(--ink);}
   @media(max-width:560px){ .card{padding:20px} }
 </style>
 </head>
