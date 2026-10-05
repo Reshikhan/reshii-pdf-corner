@@ -26,10 +26,17 @@
   body{
     font-family:'Segoe UI',system-ui,-apple-system,sans-serif; color:var(--ink);
     background:
-      radial-gradient(900px 480px at 12% -6%, rgba(59,130,246,.14), transparent 60%),
-      radial-gradient(800px 460px at 88% 4%, rgba(139,92,246,.12), transparent 60%),
-      linear-gradient(180deg,var(--bg),var(--bg2));
+      radial-gradient(1000px 560px at 6% -10%, rgba(196,181,253,.38), transparent 62%),
+      radial-gradient(940px 560px at 96% 2%, rgba(249,168,212,.30), transparent 62%),
+      radial-gradient(760px 520px at 50% 112%, rgba(147,197,253,.20), transparent 62%),
+      linear-gradient(180deg,#fbfcff,#f2f4fb);
     min-height:100vh; transition:background .35s,color .35s;
+  }
+  body.dark{
+    background:
+      radial-gradient(1000px 560px at 6% -10%, rgba(124,93,250,.16), transparent 62%),
+      radial-gradient(940px 560px at 96% 2%, rgba(236,72,153,.12), transparent 62%),
+      linear-gradient(180deg,#0b1226,#0d1430);
   }
   .wrap{max-width:1080px; margin:0 auto; padding:0 18px}
   header.top{position:sticky; top:0; z-index:50; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
@@ -43,14 +50,14 @@
     backdrop-filter:blur(10px); transition:transform .15s}
   .theme-btn:hover{transform:translateY(-1px)}
   .hero{text-align:center; padding:56px 0 30px}
-  .hero h1{font-size:clamp(2rem,5vw,3.2rem); font-weight:800; line-height:1.12; margin-bottom:12px}
+  .hero h1{font-size:clamp(2.1rem,5.4vw,3.4rem); font-weight:800; line-height:1.08; margin-bottom:12px; letter-spacing:-1px}
   .hero h1 .grad{background:linear-gradient(90deg,var(--accent),var(--accent2)); -webkit-background-clip:text; background-clip:text; color:transparent}
   .hero p{color:var(--muted); font-size:1.05rem; max-width:640px; margin:0 auto 8px}
   .pill{display:inline-flex; align-items:center; gap:8px; margin-top:14px; padding:8px 16px; border-radius:999px;
     background:var(--card); border:1px solid var(--card-border); box-shadow:var(--shadow); font-size:.85rem; color:var(--muted)}
   .pill b{color:var(--ink)}
   .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:16px; padding:26px 0 10px}
-  .tool-card{background:var(--card); border:1px solid var(--card-border); border-radius:var(--radius);
+  .tool-card{background:var(--card); border:1px solid var(--card-border); border-radius:22px;
     padding:22px 18px; cursor:pointer; box-shadow:var(--shadow); backdrop-filter:blur(12px);
     transition:transform .18s, box-shadow .18s; text-align:left}
   .tool-card:hover{transform:translateY(-4px)}
@@ -77,8 +84,9 @@
   .field{display:flex; flex-direction:column; gap:6px; font-size:.85rem; color:var(--muted); font-weight:600}
   .field input,.field select{background:var(--input-bg); border:1px solid var(--input-border); color:var(--ink);
     border-radius:12px; padding:10px 12px; font-size:.95rem; min-width:0}
-  .btn{background:linear-gradient(90deg,var(--accent),var(--accent2)); color:#fff; border:none; border-radius:14px;
-    padding:13px 26px; font-size:1rem; font-weight:800; cursor:pointer; box-shadow:var(--shadow); transition:transform .15s, opacity .15s}
+  .btn{background:linear-gradient(90deg,#8b5cf6,#ec4899); color:#fff; border:none; border-radius:999px;
+    padding:13px 30px; font-size:1rem; font-weight:800; cursor:pointer;
+    box-shadow:0 8px 24px rgba(139,92,246,.35); transition:transform .15s, opacity .15s, box-shadow .15s}
   .btn:hover{transform:translateY(-2px)}
   .btn:disabled{opacity:.55; cursor:wait; transform:none}
   .btn.ghost{background:var(--input-bg); color:var(--ink); border:1px solid var(--input-border)}
@@ -151,6 +159,17 @@ if (window.pdfjsLib) {
 const { jsPDF } = (window.jspdf || {});
 const PDFLib = window.PDFLib || {};
 
+/* ---------- AI background removal (runs in-browser, model downloads once) ---------- */
+let _bgModule = null;
+async function removeBackgroundAI(file, onStatus){
+  if (!_bgModule){
+    if (onStatus) onStatus('Loading AI model (one-time download, ~40MB)…');
+    _bgModule = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal/+esm');
+  }
+  if (onStatus) onStatus('Removing background…');
+  return await _bgModule.removeBackground(file);
+}
+
 /* ---------- Small helpers ---------- */
 function el(html){
   const t = document.createElement('template');
@@ -222,6 +241,8 @@ const TOOLS = [
   { id:'rotate',   ico:'🔄', name:'Rotate PDF',        desc:'Rotate all pages by 90°, 180° or 270°.' },
   { id:'pdf2text', ico:'📝', name:'PDF to Text',       desc:'Extract plain text from a PDF into a .txt file.' },
   { id:'passport', ico:'🪪', name:'Passport Photo',    desc:'Make 2×2" or 35×45mm passport photos + 4×6 print sheet.' },
+  { id:'bgremove', ico:'🪄', name:'Background Remover', desc:'Erase photo backgrounds with AI. Transparent PNG output.' },
+  { id:'crop',     ico:'🔲', name:'Crop Image',         desc:'Crop to any aspect ratio with drag, zoom and presets.' },
   { id:'imgcompress', ico:'📦', name:'Compress Image', desc:'Reduce JPG/PNG/WebP size with a quality slider.' },
   { id:'imgresize',   ico:'📐', name:'Resize Image',   desc:'Change image dimensions, keep aspect ratio.' },
   { id:'imgconvert',  ico:'🔁', name:'Image Converter',desc:'Convert between PNG, JPG and WebP formats.' },
@@ -419,17 +440,24 @@ BUILDERS.pdf2text = function(ws){
     setStatus(ws, `Done — text from ${pdf.numPages} page(s) extracted.`, 'ok');
   }, 'Reset');
 };
-/* ================= 8. PASSPORT PHOTO ================= */
+/* ================= 8. PASSPORT PHOTO PRO ================= */
 BUILDERS.passport = function(ws){
-  let img = null, imgEl = null;
+  let imgEl = null, imgFile = null, cutoutURL = null;
   const SIZES = {
     'us':   { label:'US Visa 2×2 in (600×600)', w:600, h:600 },
     'eu':   { label:'35×45 mm (413×531)', w:413, h:531 },
     'in35': { label:'35×35 mm (413×413)', w:413, h:413 },
   };
+  const BG = {
+    'white': { label:'White', c:'#ffffff' },
+    'blue':  { label:'Blue', c:'#3b7dd8' },
+    'lightblue': { label:'Light blue', c:'#cfe3fa' },
+    'red':   { label:'Red', c:'#d94343' },
+  };
   makeDrop(ws, 'image/* — one portrait photo', false, async f => {
-    imgEl = await loadImage(await readAsDataURL(f[0]));
-    showFiles(ws, [f[0]]);
+    imgFile = f[0]; cutoutURL = null;
+    imgEl = await loadImage(await readAsDataURL(imgFile));
+    showFiles(ws, [imgFile]);
     drawPreview();
   });
   const row = el(`<div class="row">
@@ -442,57 +470,183 @@ BUILDERS.passport = function(ws){
     <label class="field">Output<select id="pout"><option value="single">Single photo (JPG)</option><option value="sheet">4×6 print sheet</option></select></label>
   </div>`);
   ws.querySelector('#wsBody').appendChild(row);
+  const row2 = el(`<div class="row">
+    <label class="field" style="flex-direction:row;align-items:center;gap:8px"><input id="prm" type="checkbox" style="width:18px;height:18px;accent-color:#8b5cf6"> Remove background (AI)</label>
+    <label class="field" id="bgwrap" style="display:none">Background color<select id="pbg">
+      <option value="white">White</option><option value="lightblue">Light blue</option>
+      <option value="blue">Blue</option><option value="red">Red</option>
+    </select></label>
+  </div>`);
+  ws.querySelector('#wsBody').appendChild(row2);
   const cv = el('<canvas class="preview" width="420" height="420"></canvas>');
   ws.querySelector('#wsBody').appendChild(cv);
-  p_note(ws, 'Tip: face the camera, plain background. Adjust zoom so your face fills the frame nicely.');
+  p_note(ws, 'Tip: face the camera, plain background. AI removal lets you swap the background to any ID-photo color.');
   ws.querySelector('#pzoom').addEventListener('input', drawPreview);
   ws.querySelector('#psize').addEventListener('change', drawPreview);
+  ws.querySelector('#prm').addEventListener('change', e => {
+    ws.querySelector('#bgwrap').style.display = e.target.checked ? 'flex' : 'none';
+    drawPreview();
+  });
 
-  function renderPhoto(targetW, targetH, zoom){
+  async function getSource(){
+    const wantCutout = ws.querySelector('#prm').checked;
+    if (wantCutout && !cutoutURL && imgFile){
+      const blob = await removeBackgroundAI(imgFile, msg => setStatus(ws, msg));
+      cutoutURL = URL.createObjectURL(blob);
+      setStatus(ws, 'Background removed.', 'ok');
+    }
+    if (wantCutout && cutoutURL) return await loadImage(cutoutURL);
+    return imgEl;
+  }
+  function renderPhoto(src, targetW, targetH, zoom, bgColor){
     const c = document.createElement('canvas');
     c.width = targetW; c.height = targetH;
     const ctx = c.getContext('2d');
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, targetW, targetH);
-    if (!imgEl) return c;
-    // cover-fit crop centered
-    const s = Math.max(targetW / imgEl.width, targetH / imgEl.height) * zoom;
-    const dw = imgEl.width * s, dh = imgEl.height * s;
-    ctx.drawImage(imgEl, (targetW - dw)/2, (targetH - dh)/2, dw, dh);
+    ctx.fillStyle = bgColor || '#ffffff'; ctx.fillRect(0, 0, targetW, targetH);
+    if (!src) return c;
+    const s = Math.max(targetW / src.width, targetH / src.height) * zoom;
+    const dw = src.width * s, dh = src.height * s;
+    ctx.drawImage(src, (targetW - dw)/2, (targetH - dh)/2, dw, dh);
     return c;
   }
-  function drawPreview(){
+  async function drawPreview(){
     if (!imgEl) return;
     const key = ws.querySelector('#psize').value;
     const { w, h } = SIZES[key];
     const zoom = parseFloat(ws.querySelector('#pzoom').value);
-    const src = renderPhoto(w, h, zoom);
+    const bgKey = ws.querySelector('#pbg').value;
+    const src = await getSource().catch(err => { setStatus(ws, 'AI removal failed — using original photo.', 'err'); ws.querySelector('#prm').checked = false; ws.querySelector('#bgwrap').style.display='none'; return imgEl; });
+    const out = renderPhoto(src, w, h, zoom, BG[bgKey].c);
     const ctx = cv.getContext('2d');
     cv.width = 420; cv.height = Math.round(420 * h / w);
-    ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--input-bg') || '#fff';
-    ctx.fillRect(0, 0, cv.width, cv.height);
-    ctx.drawImage(src, 0, 0, cv.width, cv.height);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(out, 0, 0, cv.width, cv.height);
   }
   actionRow(ws, 'Download Photo', async () => {
     if (!imgEl) return setStatus(ws, 'Please choose a photo first.', 'err');
     const key = ws.querySelector('#psize').value;
     const { w, h, label } = SIZES[key];
     const zoom = parseFloat(ws.querySelector('#pzoom').value);
+    const bgKey = ws.querySelector('#pbg').value;
     const mode = ws.querySelector('#pout').value;
+    setStatus(ws, 'Preparing…');
+    const src = await getSource().catch(() => imgEl);
     if (mode === 'single'){
-      const c = renderPhoto(w, h, zoom);
-      c.toBlob(b => { download(b, 'reshii-passport.jpg'); setStatus(ws, `Done — ${label} photo downloaded.`, 'ok'); }, 'image/jpeg', 0.95);
+      renderPhoto(src, w, h, zoom, BG[bgKey].c).toBlob(b => {
+        download(b, 'reshii-passport.jpg'); setStatus(ws, `Done — ${label} photo downloaded.`, 'ok');
+      }, 'image/jpeg', 0.95);
     } else {
-      // 4x6 inch @300dpi = 1800x1200 sheet
       const sheet = document.createElement('canvas');
       sheet.width = 1800; sheet.height = 1200;
       const ctx = sheet.getContext('2d');
       ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 1800, 1200);
-      const photo = renderPhoto(w, h, zoom);
+      const photo = renderPhoto(src, w, h, zoom, BG[bgKey].c);
       const cols = Math.floor(1800 / w), rows = Math.floor(1200 / h);
       for (let r = 0; r < rows; r++) for (let cI = 0; cI < cols; cI++)
         ctx.drawImage(photo, cI * w, r * h);
       sheet.toBlob(b => { download(b, 'reshii-passport-4x6.jpg'); setStatus(ws, `Done — 4×6 print sheet (${cols*rows} copies) downloaded.`, 'ok'); }, 'image/jpeg', 0.95);
     }
+  }, 'Reset');
+};
+
+/* ================= 8b. BACKGROUND REMOVER ================= */
+BUILDERS.bgremove = function(ws){
+  let file = null;
+  makeDrop(ws, 'image/* (.png, .jpg, .webp)', false, f => { file = f[0]; showFiles(ws, [f[0]]); });
+  const cv = el('<canvas class="preview" style="display:none"></canvas>');
+  ws.querySelector('#wsBody').appendChild(cv);
+  p_note(ws, 'AI runs entirely in your browser. First use downloads the model once (~40MB), then it is instant.');
+  actionRow(ws, 'Remove Background', async () => {
+    if (!file) return setStatus(ws, 'Please choose an image first.', 'err');
+    try {
+      const blob = await removeBackgroundAI(file, msg => setStatus(ws, msg));
+      const img = await loadImage(URL.createObjectURL(blob));
+      const maxW = 560, s = Math.min(1, maxW / img.width);
+      cv.width = Math.round(img.width * s); cv.height = Math.round(img.height * s);
+      cv.style.display = 'block';
+      const ctx = cv.getContext('2d');
+      // checkerboard backdrop so transparency is visible
+      const n = 16;
+      for (let y = 0; y < cv.height; y += n) for (let x = 0; x < cv.width; x += n){
+        ctx.fillStyle = ((x + y) / n) % 2 ? '#e5e7eb' : '#ffffff';
+        ctx.fillRect(x, y, n, n);
+      }
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      const dl = el('<a class="btn dl show" style="margin-top:12px">⬇ Download transparent PNG</a>');
+      dl.href = URL.createObjectURL(blob); dl.download = 'reshii-no-background.png';
+      ws.querySelector('#wsBody').appendChild(dl);
+      setStatus(ws, 'Done — background removed.', 'ok');
+    } catch(err){ setStatus(ws, 'Could not remove background. Check your connection and try again.', 'err'); }
+  }, 'Reset');
+};
+
+/* ================= 8c. CROP IMAGE ================= */
+BUILDERS.crop = function(ws){
+  let imgEl = null;
+  const RATIOS = { 'free':null, '1:1':1, '4:3':4/3, '3:4':3/4, '16:9':16/9, '9:16':9/16 };
+  let ratioKey = '1:1', zoom = 1.2, ox = 0, oy = 0, dragging = false, lx = 0, ly = 0;
+  makeDrop(ws, 'image/* (.png, .jpg, .webp)', false, async f => {
+    imgEl = await loadImage(await readAsDataURL(f[0]));
+    showFiles(ws, [f[0]]); ox = 0; oy = 0; draw();
+  });
+  const row = el(`<div class="row">
+    <label class="field">Aspect ratio<select id="cratio">
+      <option value="1:1" selected>1:1 Square</option><option value="4:3">4:3</option><option value="3:4">3:4</option>
+      <option value="16:9">16:9</option><option value="9:16">9:16</option><option value="free">Free (original)</option>
+    </select></label>
+    <label class="field">Zoom<input id="czoom" type="range" min="1" max="3" step="0.05" value="1.2"></label>
+    <label class="field">Format<select id="cfmt"><option value="jpeg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option></select></label>
+  </div>`);
+  ws.querySelector('#wsBody').appendChild(row);
+  const cv = el('<canvas class="preview" width="480" height="360" style="cursor:grab;touch-action:none"></canvas>');
+  ws.querySelector('#wsBody').appendChild(cv);
+  p_note(ws, 'Drag the image to reposition. Use zoom + aspect ratio to frame the perfect crop.');
+  ws.querySelector('#cratio').addEventListener('change', e => { ratioKey = e.target.value; ox = 0; oy = 0; draw(); });
+  ws.querySelector('#czoom').addEventListener('input', e => { zoom = parseFloat(e.target.value); draw(); });
+  cv.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; cv.setPointerCapture(e.pointerId); cv.style.cursor = 'grabbing'; });
+  cv.addEventListener('pointermove', e => {
+    if (!dragging || !imgEl) return;
+    const r = cv.getBoundingClientRect();
+    ox += (e.clientX - lx) * (cv.width / r.width);
+    oy += (e.clientY - ly) * (cv.height / r.height);
+    lx = e.clientX; ly = e.clientY; draw();
+  });
+  ['pointerup','pointercancel'].forEach(ev => cv.addEventListener(ev, () => { dragging = false; cv.style.cursor = 'grab'; }));
+
+  function box(){
+    let bw = cv.width, bh = cv.height;
+    const r = RATIOS[ratioKey];
+    if (r){ if (bw / bh > r) bw = bh * r; else bh = bw / r; }
+    return { x:(cv.width - bw)/2, y:(cv.height - bh)/2, w:bw, h:bh };
+  }
+  function draw(){
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, cv.width, cv.height);
+    const b = box();
+    if (imgEl){
+      const s = Math.max(b.w / imgEl.width, b.h / imgEl.height) * zoom;
+      const dw = imgEl.width * s, dh = imgEl.height * s;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(b.x, b.y, b.w, b.h); ctx.clip();
+      ctx.drawImage(imgEl, b.x + (b.w - dw)/2 + ox, b.y + (b.h - dh)/2 + oy, dw, dh);
+      ctx.restore();
+    }
+    ctx.strokeStyle = '#8b5cf6'; ctx.lineWidth = 3;
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+  }
+  draw();
+  actionRow(ws, 'Download Crop', async () => {
+    if (!imgEl) return setStatus(ws, 'Please choose an image first.', 'err');
+    const b = box();
+    const scale = 1200 / Math.max(b.w, b.h);
+    const out = document.createElement('canvas');
+    out.width = Math.round(b.w * scale); out.height = Math.round(b.h * scale);
+    const ctx = out.getContext('2d');
+    const s = Math.max(b.w / imgEl.width, b.h / imgEl.height) * zoom;
+    const dw = imgEl.width * s * scale, dh = imgEl.height * s * scale;
+    ctx.drawImage(imgEl, (out.width - dw)/2 + ox * scale, (out.height - dh)/2 + oy * scale, dw, dh);
+    const fmt = ws.querySelector('#cfmt').value;
+    out.toBlob(bl => { download(bl, `reshii-crop.${fmt === 'jpeg' ? 'jpg' : fmt}`); setStatus(ws, `Done — cropped to ${out.width}×${out.height}px.`, 'ok'); }, 'image/' + fmt, 0.92);
   }, 'Reset');
 };
 
